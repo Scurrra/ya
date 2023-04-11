@@ -4,3 +4,4 @@
 //! key exchange.
 
 pub mod dh;
+pub mod keychain;
