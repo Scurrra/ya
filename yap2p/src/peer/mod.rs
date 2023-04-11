@@ -9,7 +9,7 @@ use sha2::{Sha512, Digest};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Mutex;
 
-use crate::crypto::DH;
+use crate::crypto::dh::DH;
 
 /// [`Peer`]'s ID
 /// 
@@ -30,7 +30,7 @@ impl PeerId {
     /// # Arguments
     /// 
     /// * `username` --- [`Peer`]'s username
-    /// * `dh` --- [Diffie-Hellman](crypto::DH) structure
+    /// * `dh` --- [Diffie-Hellman](DH) structure
     /// 
     /// ! Is called from [`Peer::new()`]
     pub fn new(username: &str, dh: DH) -> PeerId {
@@ -80,7 +80,7 @@ impl Peer {
     /// # Arguments
     /// 
     /// * `username` --- [`Peer`]'s username
-    /// * `dh` --- [Diffie-Hellman](crypto::DH) structure
+    /// * `dh` --- [Diffie-Hellman](DH) structure
     pub fn new(username: &str, dh: DH) -> Peer {
         Peer {
             id: PeerId::new(username, dh),
