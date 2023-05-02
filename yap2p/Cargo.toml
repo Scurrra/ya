@@ -8,16 +8,18 @@ aes = "0.8.2"
 rand = "0.8.5"
 serde = { version = "1.0.159", features = ["derive", "alloc"] }
 sha2 = "0.10.6"
+tokio = "1.27.0"
 
 # Optional
 reqwest = { version = "0.11.16", features = ["blocking"], optional = true}
 ureq = { version = "2.6.2", optional = true}
 isahc = { version="1.7.2", features=["http2"], optional=true }
+bitflags = "2.2.1"
 
 [features]
 default = ["reqwest"]
 
 # http clients
-reqwest = ["dep:reqwest"]
-ureq = ["dep:ureq"]
-isahc = ["dep:isahc"]
+reqwest = ["dep:reqwest"]   # tokio & futures & hyper
+ureq = ["dep:ureq"]         # ...
+isahc = ["dep:isahc"]       # futures
