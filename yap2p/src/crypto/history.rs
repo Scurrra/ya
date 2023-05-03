@@ -25,7 +25,7 @@ pub struct Message {
     pub key: [u8; 32],
 
     /// Is data encrypted or not
-    pub encrypted: bool,
+    pub is_encrypted: bool,
     
     /// Message data
     pub data: Box<dyn AsRef<[u8]>> // should work for whatever implements AsRef<u8>
@@ -43,7 +43,7 @@ impl Message {
         Message { 
             timestamp:  SystemTime::now().elapsed().unwrap().as_secs(), 
             key:        key, 
-            encrypted:  false,
+            is_encrypted:  false,
             data:       Box::new(data.as_ref().to_owned())
         }
     }
@@ -59,7 +59,7 @@ impl Message {
         Message { 
             timestamp:  SystemTime::now().elapsed().unwrap().as_secs(), 
             key:        key, 
-            encrypted:  true,
+            is_encrypted:  true,
             data:       Box::new(data.as_ref().to_owned())
         }
     }
