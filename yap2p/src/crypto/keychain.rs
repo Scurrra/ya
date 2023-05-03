@@ -50,8 +50,7 @@ impl KeyChain {
     /// 
     /// # Arguments
     /// 
-    /// * `block` --- data for key updating; in this library it is a message hash 
-    /// (not a message to not share private data with other parts of library)
+    /// * `block` --- data for key updating
     pub fn update(&self, block: [u8; 32]) {
         let mut top = self.top.lock().unwrap();
         

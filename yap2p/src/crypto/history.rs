@@ -71,13 +71,19 @@ pub struct History {
     pub top_key: KeyChain,
 
     /// Timestamp of the last message. Needed because `messages` can be empty.
-    pub top_timestamp: u64,
+    pub top_timestamp: Mutex<u64>,
 
     /// Maximum number of messages stored at a time.
-    pub constraint: u16,
+    pub constraint: usize,
+
+    /// Time span, while all messages stay alive
+    pub soft_ttl: u64,
+
+    /// Time span, after which all messages are deleted
+    pub hard_ttl: u64,
 
     /// Stored [`Message`]s
-    pub messages: Vec<Message>
+    pub messages: Mutex<Vec<Message>>
 }
 
 impl History {
@@ -87,16 +93,22 @@ impl History {
     /// 
     /// * `init_key` --- initial encryption key
     /// * `constraint` --- maximum number of messages in [`History`] at a time
-    pub fn init(init_key: KeyChain, constraint: u16) -> History {
+    pub fn init(
+            init_key: KeyChain, 
+            constraint: u16, 
+            soft_ttl: u64, 
+            hard_ttl: u64
+        ) -> History {
         let init_message = Message::new(
             "Initial message",
             init_key.current()
         );
         History {
             top_key:        init_key,
-            top_timestamp:  init_message.timestamp,
-            constraint:     constraint,
-            messages:       vec![init_message]
+            top_timestamp:  Mutex::new(init_message.timestamp),
+            constraint:     constraint as usize,
+            soft_ttl, hard_ttl,
+            messages:       Mutex::new(vec![init_message])
         }
     }
 
@@ -107,16 +119,96 @@ impl History {
     /// * `init_key` --- initial encryption key
     /// * `constraint` --- maximum number of messages in [`History`] at a time
     /// * `init_message` --- 
-    pub fn init_with_message(init_key: KeyChain, constraint: u16, init_message: String) -> History {
+    pub fn init_with_message(
+            init_key: KeyChain, 
+            init_message: String, 
+            constraint: u16, 
+            soft_ttl: u64, 
+            hard_ttl: u64
+        ) -> History {
         let init_message = Message::new(
             init_message,
             init_key.current()
         );
         History {
             top_key:        init_key,
-            top_timestamp:  init_message.timestamp,
-            constraint:     constraint,
-            messages:       vec![init_message]
+            top_timestamp:  Mutex::new(init_message.timestamp),
+            constraint:     constraint as usize,
+            soft_ttl, hard_ttl,
+            messages:       Mutex::new(vec![init_message])
+        }
+    }
+
+    /// Add new message to [`History`]
+    /// 
+    /// Arguments
+    /// 
+    /// * `data` --- message
+    /// * `key` --- message encryption key
+    /// 
+    /// We do not need `&mut self` because of interior mutability
+    pub fn new_message(&self, data: impl AsRef<[u8]>, key: [u8; 32]) {
+        // create new message
+        let message = Message::new(
+            data, key.clone()
+        );
+
+        // update history's top key 
+        self.top_key.update(key);
+
+        // update history's top timestamp
+        *(self.top_timestamp.lock().unwrap()) = message.timestamp;
+
+        // finally, add new message to the history
+        let mut messages = self.messages.lock().unwrap();
+        (*messages).push(message);
+    }
+
+    /// Add new encrypted message to history
+    /// 
+    /// Arguments
+    /// 
+    /// * `data` --- message
+    /// * `key` --- message encryption key
+    /// 
+    /// We do not need `&mut self` because of interior mutability
+    pub fn new_message_encrypted(&self, data: impl AsRef<[u8]>, key: [u8; 32]) {
+        // create new message
+        let message = Message::new_encrypted(
+            data, key.clone()
+        );
+
+        // update history's top key 
+        self.top_key.update(key);
+
+        // update history's top timestamp
+        *(self.top_timestamp.lock().unwrap()) = message.timestamp;
+
+        // finally, add new message to the history
+        let mut messages = self.messages.lock().unwrap();
+        (*messages).push(message);
+    }
+
+    /// Clean up [`History`]
+    /// 
+    /// We do not need `&mut self` because of interior mutability
+    pub fn cleanup(&self) {
+        // compute soft and hard deadlines
+        let now = SystemTime::now().elapsed().unwrap().as_secs();
+        let soft_deadline = now - self.soft_ttl;
+        let hard_deadline = now - self.hard_ttl;
+
+        let mut messages = self.messages.lock().unwrap();
+
+        // drop all old messages
+        (*messages).retain(
+            |m| m.timestamp > hard_deadline
+        );
+
+        // leave in history only `constraint` number of messages older than `soft_ttl`
+        while (*messages).len() > self.constraint && 
+                (*messages)[0].timestamp < soft_deadline {
+            (*messages).remove(0);
         }
     }
 }
