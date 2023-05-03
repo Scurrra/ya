@@ -2,19 +2,11 @@
 //! 
 //! In yap2p every piece of the transmitted data
 //! is called [`Message`].
- 
-use sha2::{Sha256, Digest};
-use aes::Aes256;
-use aes::cipher::{
-    BlockCipher, BlockEncrypt, BlockDecrypt, KeyInit,
-    generic_array::{typenum::U16, GenericArray},
-};
 
 use std::sync::Mutex;
 use std::time::SystemTime;
 
 use super::keychain::KeyChain;
-use crate::peer::Peer;
 
 /// Struct for storing a piece of data to be transmitted.
 pub struct Message {
@@ -92,50 +84,23 @@ impl History {
     /// Arguments
     /// 
     /// * `init_key` --- initial encryption key
+    /// * `timestamp` --- needed for history synchronization
     /// * `constraint` --- maximum number of messages in [`History`] at a time
+    /// * `soft_ttl` --- soft time to live
+    /// * `hard_ttl` --- hard time to live
     pub fn init(
             init_key: KeyChain, 
+            timestamp: u64,
             constraint: u16, 
             soft_ttl: u64, 
             hard_ttl: u64
         ) -> History {
-        let init_message = Message::new(
-            "Initial message",
-            init_key.current()
-        );
         History {
             top_key:        init_key,
-            top_timestamp:  Mutex::new(init_message.timestamp),
+            top_timestamp:  Mutex::new(timestamp),
             constraint:     constraint as usize,
             soft_ttl, hard_ttl,
-            messages:       Mutex::new(vec![init_message])
-        }
-    }
-
-    /// Initiate history
-    /// 
-    /// Arguments
-    /// 
-    /// * `init_key` --- initial encryption key
-    /// * `constraint` --- maximum number of messages in [`History`] at a time
-    /// * `init_message` --- 
-    pub fn init_with_message(
-            init_key: KeyChain, 
-            init_message: String, 
-            constraint: u16, 
-            soft_ttl: u64, 
-            hard_ttl: u64
-        ) -> History {
-        let init_message = Message::new(
-            init_message,
-            init_key.current()
-        );
-        History {
-            top_key:        init_key,
-            top_timestamp:  Mutex::new(init_message.timestamp),
-            constraint:     constraint as usize,
-            soft_ttl, hard_ttl,
-            messages:       Mutex::new(vec![init_message])
+            messages:       Mutex::new(Vec::new())
         }
     }
 
