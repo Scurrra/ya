@@ -224,6 +224,6 @@ impl History {
     /// Potentially heavy
     pub fn rearrange(&self) {
         let mut messages = self.messages.lock().unwrap();
-        messages.sort_unstable_by_key(|m| m.timestamp);
+        messages.sort_by_key(|m| m.timestamp);
     }
 }
