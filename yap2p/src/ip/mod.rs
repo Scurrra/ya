@@ -23,7 +23,7 @@ fn isahc_get_string() -> Result<String, isahc::Error> {
 
 #[cfg(feature = "reqwest")]
 /// Function to obtain IPv4 address from `ifconfig.me`
-pub fn obtain_ipv4_addr() -> Option<Ipv4Addr> {
+pub(crate) fn obtain_ipv4_addr() -> Option<Ipv4Addr> {
     let resp = reqwest::blocking::get("https://ifconfig.me/ip").ok();
     if let Some(resp) = resp {
         if let Ok(resp) = resp.text() {
@@ -35,7 +35,7 @@ pub fn obtain_ipv4_addr() -> Option<Ipv4Addr> {
 
 #[cfg(feature = "ureq")]
 /// Function to obtain IPv4 address from `ifconfig.me`
-pub fn obtain_ipv4_addr() -> Option<Ipv4Addr> {
+pub(crate) fn obtain_ipv4_addr() -> Option<Ipv4Addr> {
     let resp = ureq::get("http://ifconfig.me/ip").call().ok();
     if let Some(resp) = resp {
         if let Ok(resp) = resp.into_string() {
@@ -47,7 +47,7 @@ pub fn obtain_ipv4_addr() -> Option<Ipv4Addr> {
 
 #[cfg(feature = "isahc")]
 /// Function to obtain IPv4 address from `ifconfig.me`
-pub fn obtain_ipv4_addr() -> Option<Ipv4Addr> {
+pub(crate) fn obtain_ipv4_addr() -> Option<Ipv4Addr> {
     let resp = isahc_get_string();
     if let Ok(resp) = resp {
         return Ipv4Addr::from_str(&resp).ok();
