@@ -1612,6 +1612,7 @@ version = "0.1.0"
 dependencies = [
  "aes",
  "bitflags 2.2.1",
+ "generic-array",
  "isahc",
  "rand",
  "reqwest",
