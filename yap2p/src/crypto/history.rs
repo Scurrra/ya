@@ -33,10 +33,10 @@ impl Message {
     /// and use `key` only while sending data through network
     pub fn new(data: impl AsRef<[u8]>, key: [u8; 32]) -> Message {
         Message { 
-            timestamp:  SystemTime::now().elapsed().unwrap().as_secs(), 
-            key:        key, 
-            is_encrypted:  false,
-            data:       Box::new(data.as_ref().to_owned())
+            timestamp:      SystemTime::now().elapsed().unwrap().as_secs(), 
+            key:            key, 
+            is_encrypted:   false,
+            data:           Box::new(data.as_ref().to_owned())
         }
     }
 
@@ -49,16 +49,53 @@ impl Message {
     /// and use `key` only while sending data through network
     pub fn new_encrypted(data: impl AsRef<[u8]>, key: [u8; 32]) -> Message {
         Message { 
-            timestamp:  SystemTime::now().elapsed().unwrap().as_secs(), 
-            key:        key, 
-            is_encrypted:  true,
-            data:       Box::new(data.as_ref().to_owned())
+            timestamp:      SystemTime::now().elapsed().unwrap().as_secs(), 
+            key:            key, 
+            is_encrypted:   true,
+            data:           Box::new(data.as_ref().to_owned())
+        }
+    }
+
+    /// New message constructor (for received ones)
+    /// 
+    /// Arguments
+    /// 
+    /// * `data` --- data, contained by the [`Message`]
+    /// * `key` --- encryption key; it's proposed to store raw data 
+    /// and use `key` only while sending data through network
+    /// * `timestamp` --- creation time of message received
+    pub fn new_received(data: impl AsRef<[u8]>, key: [u8; 32], timestamp: u64) -> Message {
+        Message { 
+            timestamp:      timestamp, 
+            key:            key, 
+            is_encrypted:   false,
+            data:           Box::new(data.as_ref().to_owned())
+        }
+    }
+
+    /// New encrypted message constructor (for received ones)
+    /// 
+    /// Arguments
+    /// 
+    /// * `data` --- data, contained by the [`Message`]
+    /// * `key` --- encryption key; it's proposed to store raw data 
+    /// and use `key` only while sending data through network
+    /// * `timestamp` --- creation time of message received
+    pub fn new_received_encrypted(data: impl AsRef<[u8]>, key: [u8; 32], timestamp: u64) -> Message {
+        Message { 
+            timestamp:      timestamp, 
+            key:            key, 
+            is_encrypted:   true,
+            data:           Box::new(data.as_ref().to_owned())
         }
     }
 }
 
 /// [`Message`]s storage, including all specific logic.
 pub struct History {
+    /// Is history encrypted
+    pub is_encrypted: bool,
+
     /// Key to encrypt new message. Needed because `messages` can be empty.
     pub top_key: KeyChain,
 
@@ -66,13 +103,13 @@ pub struct History {
     pub top_timestamp: Mutex<u64>,
 
     /// Maximum number of messages stored at a time.
-    pub constraint: usize,
+    constraint: usize,
 
     /// Time span, while all messages stay alive
-    pub soft_ttl: u64,
+    soft_ttl: u64,
 
     /// Time span, after which all messages are deleted
-    pub hard_ttl: u64,
+    hard_ttl: u64,
 
     /// Stored [`Message`]s
     pub messages: Mutex<Vec<Message>>
@@ -93,9 +130,11 @@ impl History {
             timestamp: u64,
             constraint: u16, 
             soft_ttl: u64, 
-            hard_ttl: u64
+            hard_ttl: u64,
+            is_encrypted: bool
         ) -> History {
         History {
+            is_encrypted:   is_encrypted,
             top_key:        init_key,
             top_timestamp:  Mutex::new(timestamp),
             constraint:     constraint as usize,
@@ -112,11 +151,12 @@ impl History {
     /// * `key` --- message encryption key
     /// 
     /// We do not need `&mut self` because of interior mutability
-    pub fn new_message(&self, data: impl AsRef<[u8]>, key: [u8; 32]) {
+    pub fn add_message(&self, data: impl AsRef<[u8]>, key: [u8; 32]) {
         // create new message
-        let message = Message::new(
-            data, key.clone()
-        );
+        let message = match self.is_encrypted{
+            true    => Message::new(data, key.clone()),
+            false   => Message::new_encrypted(data, key.clone())
+        };
 
         // update history's top key 
         self.top_key.update(key);
@@ -129,19 +169,21 @@ impl History {
         (*messages).push(message);
     }
 
-    /// Add new encrypted message to history
+    /// Add new received message to [`History`]
     /// 
     /// Arguments
     /// 
     /// * `data` --- message
     /// * `key` --- message encryption key
+    /// * `timestamp` --- creation time of message received
     /// 
     /// We do not need `&mut self` because of interior mutability
-    pub fn new_message_encrypted(&self, data: impl AsRef<[u8]>, key: [u8; 32]) {
+    pub fn add_message_received(&self, data: impl AsRef<[u8]>, key: [u8; 32], timestamp: u64) {
         // create new message
-        let message = Message::new_encrypted(
-            data, key.clone()
-        );
+        let message = match self.is_encrypted{
+            true    => Message::new_received(data, key.clone(), timestamp),
+            false   => Message::new_received_encrypted(data, key.clone(), timestamp)
+        };
 
         // update history's top key 
         self.top_key.update(key);
@@ -175,5 +217,13 @@ impl History {
                 (*messages)[0].timestamp < soft_deadline {
             (*messages).remove(0);
         }
+    }
+
+    /// Rearrange history in case recieved message is older than the last in history
+    /// 
+    /// Potentially heavy
+    pub fn rearrange(&self) {
+        let mut messages = self.messages.lock().unwrap();
+        messages.sort_unstable_by_key(|m| m.timestamp);
     }
 }
