@@ -3,11 +3,16 @@
 use super::peer::{Peer, PeerId};
 
 use bitflags::bitflags;
+use serde::{Serialize, Deserialize};
+use bincode;
+
+mod sdp;
 
 bitflags! {
     /// Protocols enum
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
     #[repr(transparent)]
+    #[serde(transparent)]
     pub struct ProtocolType : u8 {
         /// SDP --- Symmetric Datagram Protocol
         const SDP = 0b10000000;
@@ -21,8 +26,9 @@ bitflags! {
 
 bitflags! {
     /// Packet types enum
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
     #[repr(transparent)]
+    #[serde(transparent)]
     pub struct PacketType : u8 {
         /// For inner use for now
         const ECHO =    0b10000000;
@@ -62,6 +68,7 @@ bitflags! {
 }
 
 /// Common packet header
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Header {
     /// Protocol type
     pub protocol_type: ProtocolType,
@@ -92,5 +99,16 @@ impl Header {
             protocol_type, packet_type, length, 
             src_id, rec_id
         }
+    }
+
+    /// Serialize [`Header`] into bytes
+    pub fn serialize(&self) -> Vec<u8> {
+        bincode::serialize(&self).unwrap()
+    }
+
+    /// Deserialize [`Header`] from `bytes`
+    pub fn deserialize(bytes: Vec<u8>) -> Header {
+        let header: Header = bincode::deserialize(&bytes).unwrap();
+        header
     }
 }
