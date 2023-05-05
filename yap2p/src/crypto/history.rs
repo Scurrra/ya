@@ -7,6 +7,21 @@ use std::sync::Mutex;
 use std::time::SystemTime;
 
 use super::keychain::KeyChain;
+use crate::peer::Peer;
+use crate::protocols::PacketType;
+
+/// Chat type
+pub enum Chat {
+    /// Simple conversation of two [`Peer`]s.
+    OneToOne,
+
+    /// Conversation of `N` [`Peer`]s, each of which can send data.
+    /// Looks like `N` `Channel`s zipped.
+    Group,
+
+    /// Conversation of `N` [`Peer`]s with only one sender (separate [`Peer`]).
+    Channel
+}
 
 /// Struct for storing a piece of data to be transmitted.
 pub struct Message {
@@ -47,7 +62,7 @@ impl Message {
     /// * `data` --- data, contained by the [`Message`]
     /// * `key` --- encryption key; it's proposed to store raw data 
     /// and use `key` only while sending data through network
-    pub fn new_encrypted(data: impl AsRef<[u8]>, key: [u8; 32]) -> Message {
+    pub fn new_encrypted(data: &impl AsRef<[u8]>, key: [u8; 32]) -> Message {
         Message { 
             timestamp:      SystemTime::now().elapsed().unwrap().as_secs(), 
             key:            key, 
@@ -64,7 +79,7 @@ impl Message {
     /// * `key` --- encryption key; it's proposed to store raw data 
     /// and use `key` only while sending data through network
     /// * `timestamp` --- creation time of message received
-    pub fn new_received(data: impl AsRef<[u8]>, key: [u8; 32], timestamp: u64) -> Message {
+    pub fn new_received(data: &impl AsRef<[u8]>, key: [u8; 32], timestamp: u64) -> Message {
         Message { 
             timestamp:      timestamp, 
             key:            key, 
@@ -81,7 +96,7 @@ impl Message {
     /// * `key` --- encryption key; it's proposed to store raw data 
     /// and use `key` only while sending data through network
     /// * `timestamp` --- creation time of message received
-    pub fn new_received_encrypted(data: impl AsRef<[u8]>, key: [u8; 32], timestamp: u64) -> Message {
+    pub fn new_received_encrypted(data: &impl AsRef<[u8]>, key: [u8; 32], timestamp: u64) -> Message {
         Message { 
             timestamp:      timestamp, 
             key:            key, 
@@ -93,6 +108,9 @@ impl Message {
 
 /// [`Message`]s storage, including all specific logic.
 pub struct History {
+    /// [`Chat::OneToOne`] | [`Chat::Group`] | [`Chat::Channel`]
+    pub chat_t: Chat,
+    
     /// Is history encrypted
     pub is_encrypted: bool,
 
@@ -120,12 +138,14 @@ impl History {
     /// 
     /// Arguments
     /// 
+    /// * `chat_t` --- needed for determining [`PacketType`]
     /// * `init_key` --- initial encryption key
     /// * `timestamp` --- needed for history synchronization
     /// * `constraint` --- maximum number of messages in [`History`] at a time
     /// * `soft_ttl` --- soft time to live
     /// * `hard_ttl` --- hard time to live
     pub fn init(
+            chat_t: Chat,
             init_key: KeyChain, 
             timestamp: u64,
             constraint: u16, 
@@ -134,6 +154,7 @@ impl History {
             is_encrypted: bool
         ) -> History {
         History {
+            chat_t:      chat_t,
             is_encrypted:   is_encrypted,
             top_key:        init_key,
             top_timestamp:  Mutex::new(timestamp),
@@ -151,7 +172,7 @@ impl History {
     /// * `key` --- message encryption key
     /// 
     /// We do not need `&mut self` because of interior mutability
-    pub fn add_message(&self, data: impl AsRef<[u8]>, key: [u8; 32]) {
+    pub fn add_message(&self, data: &impl AsRef<[u8]>, key: [u8; 32]) {
         // create new message
         let message = match self.is_encrypted{
             true    => Message::new(data, key.clone()),
@@ -178,7 +199,7 @@ impl History {
     /// * `timestamp` --- creation time of message received
     /// 
     /// We do not need `&mut self` because of interior mutability
-    pub fn add_message_received(&self, data: impl AsRef<[u8]>, key: [u8; 32], timestamp: u64) {
+    pub fn add_message_received(&self, data: &impl AsRef<[u8]>, key: [u8; 32], timestamp: u64) {
         // create new message
         let message = match self.is_encrypted{
             true    => Message::new_received(data, key.clone(), timestamp),
