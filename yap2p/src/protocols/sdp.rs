@@ -52,7 +52,8 @@ impl SDP {
                 sender,
                 receiver.0.peer.id.to_owned(),
             )
-            .serialize(),
+            .serialize()
+            .unwrap(),
             Chat::Group => Header::new(
                 ProtocolType::SDP,
                 PacketType::CONV | PacketType::INIT,
@@ -60,7 +61,8 @@ impl SDP {
                 sender,
                 receiver.0.peer.id.to_owned(),
             )
-            .serialize(),
+            .serialize()
+            .unwrap(),
             Chat::Channel => Header::new(
                 ProtocolType::SDP,
                 PacketType::CHAN | PacketType::INIT,
@@ -68,7 +70,8 @@ impl SDP {
                 sender,
                 receiver.0.peer.id.to_owned(),
             )
-            .serialize(),
+            .serialize()
+            .unwrap(),
         };
 
         packet.extend_from_slice(payload.as_ref());
@@ -107,7 +110,8 @@ impl SDP {
                 sender,
                 receiver.0.peer.id.to_owned(),
             )
-            .serialize(),
+            .serialize()
+            .unwrap(),
             Chat::Group => Header::new(
                 ProtocolType::SDP,
                 PacketType::CONV | PacketType::HI,
@@ -115,7 +119,8 @@ impl SDP {
                 sender,
                 receiver.0.peer.id.to_owned(),
             )
-            .serialize(),
+            .serialize()
+            .unwrap(),
             Chat::Channel => Header::new(
                 ProtocolType::SDP,
                 PacketType::CHAN | PacketType::HI,
@@ -123,7 +128,8 @@ impl SDP {
                 sender,
                 receiver.0.peer.id.to_owned(),
             )
-            .serialize(),
+            .serialize()
+            .unwrap(),
         };
 
         packet.extend_from_slice(payload.as_ref());
@@ -156,7 +162,8 @@ impl SDP {
                 sender,
                 receiver.0.peer.id.to_owned(),
             )
-            .serialize();
+            .serialize()
+            .unwrap();
 
         if let Some(addr) = receiver.0.get_ipv6() {
             return self.socket.send_to(&packet, (addr, receiver.1)).await;

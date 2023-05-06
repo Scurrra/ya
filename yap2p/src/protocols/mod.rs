@@ -102,12 +102,12 @@ impl Header {
     }
 
     /// Serialize [`Header`] into bytes
-    pub fn serialize(&self) -> Vec<u8> {
-        bincode::serialize(&self).unwrap()
+    pub fn serialize(&self) -> Result<Vec<u8>, bincode::Error> {
+        bincode::serialize(&self)
     }
 
     /// Deserialize [`Header`] from `bytes`
-    pub fn deserialize(bytes: Vec<u8>) -> Header {
-        bincode::deserialize(&bytes).unwrap()
+    pub fn deserialize(bytes: Vec<u8>) -> Result<Header, bincode::Error> {
+        bincode::deserialize(&bytes)
     }
 }
