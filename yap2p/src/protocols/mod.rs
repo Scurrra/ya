@@ -108,7 +108,6 @@ impl Header {
 
     /// Deserialize [`Header`] from `bytes`
     pub fn deserialize(bytes: Vec<u8>) -> Header {
-        let header: Header = bincode::deserialize(&bytes).unwrap();
-        header
+        bincode::deserialize(&bytes).unwrap()
     }
 }
