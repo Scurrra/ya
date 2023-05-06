@@ -297,7 +297,7 @@ impl History {
     }
 
     /// Equivalent for [`ChatSynchronizer::new`]
-    pub(crate) fn synchronizer(&self) -> ChatSynchronizer {
+    pub fn synchronizer(&self) -> ChatSynchronizer {
         ChatSynchronizer { 
             chat_id: self.chat_id, 
             timestamp: *self.top_timestamp.lock().unwrap()
