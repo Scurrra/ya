@@ -337,12 +337,25 @@ impl ChatSynchronizer {
     }
 
     /// Serialize [`ChatSynchronizer`] into bytes
-    pub fn serialize(&self) -> Result<Vec<u8>, bincode::Error> {
-        bincode::serialize(&self)
+    /// 
+    /// # Panics
+    /// 
+    /// This function should not panic, 
+    /// but if it does the problem is in `bincode` crate
+    pub fn serialize(&self) -> Vec<u8> {
+        bincode::serialize(&self).unwrap()
     }
 
     /// Deserialize [`ChatSynchronizer`] from `bytes`
-    pub fn deserialize(bytes: Vec<u8>) -> Result<ChatSynchronizer, bincode::Error> {
-        bincode::deserialize(&bytes)
+    /// 
+    /// # Panics
+    /// 
+    /// This function panics if `bytes.len() != 40` 
+    #[track_caller]
+    pub fn deserialize(bytes: Vec<u8>) -> ChatSynchronizer {
+        match bincode::deserialize(&bytes) {
+            Ok(chat_sync) => chat_sync,
+            Err(_) => panic!("Wrong size of `ChatSynchronizer`"),
+        }
     }
 }
