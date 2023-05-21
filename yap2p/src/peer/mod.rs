@@ -2,7 +2,7 @@
 //! 
 //! Unlike other implementations, in `yap2p` `Peer` and `Node` are not the same. 
 //! The user is called [`Peer`], while user's devices are called [`Node`].
- 
+
 use serde::{Serialize, Deserialize};
 use sha2::{Sha512, Digest};
 
@@ -103,6 +103,7 @@ impl Peer {
 /// 
 /// Contains two fields: one for IPv4 address and one for IPv6,
 /// because some devices have either, some have both.
+#[allow(non_snake_case)] // because `V#` is better than `v#`
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct Addr {
     /// IPv4 address
