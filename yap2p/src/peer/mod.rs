@@ -8,6 +8,7 @@ use sha2::{Sha512, Digest};
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Mutex;
+use std::collections::HashMap;
 
 use crate::crypto::dh::DH;
 
@@ -123,10 +124,14 @@ pub struct Addr {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Node {
     /// [`Peer`] that [`Node`] belongs to
+    // better be [`std::sync::Arc`] because of it's weight
     pub peer: Peer,
 
     /// Device number
     pub device: u16,
+
+    // [`std::sync::Mutex`] just for interior mutability
+    // so `addrs` should not be used in async
     addrs: Mutex<Addr>
 }
 
@@ -186,5 +191,96 @@ impl Node {
     /// from the user
     pub fn get_ipv6(&self) -> Option<Ipv6Addr> {
         self.addrs.lock().unwrap().V6
+    }
+}
+
+/// Analog for [`Node`] but for storing all available [`Node`]s of the [`Peer`]
+pub struct Contact {
+    /// [`Peer`] that owns all this [`Addr`]s
+    pub peer: Peer,
+
+    /// [`HashMap`] that refers pairs (address, port) to corresponding [`Node.device`]
+    addrs: Mutex<HashMap<u16, (Addr, u16)>>
+}
+
+impl Contact {
+    /// Constructs new contact from [`Peer`] and list of [`Node`]s with corresponding ports
+    /// 
+    /// Arguments
+    /// 
+    /// * `peer` --- [`Peer`] behind [`Contact`]
+    /// * `nodes` --- pairs of [`Node`]s and corresponding ports
+    /// 
+    /// Notes
+    /// 
+    /// * It's assumed that all `nodes` refers to the `peer`, so it's not checked in the function  
+    pub fn new(peer: &Peer, nodes: &Vec<(Node, u16)>) -> Contact {
+        let mut addrs: HashMap<u16, (Addr, u16)> = HashMap::with_capacity(nodes.len());
+        
+        // potential problem if element of `nodes` does not refer to `peer`
+        for node in nodes {
+            addrs.insert(
+                node.0.device, 
+                (node.0.get_ips(), node.1)
+            );
+        }
+
+        Contact { 
+            peer: peer.clone(), 
+            addrs: Mutex::new(addrs) 
+        }
+    }
+
+    /// Updates or adds new node to the list of [`Node`]s of the [`Contact`]
+    /// 
+    /// Arguments
+    /// 
+    /// * `node` --- pair of [`Node`] and corresponding port
+    pub fn set_or_add_node(&self, node: (&Node, u16)) {
+        (
+            *self.addrs.lock().unwrap()
+        ).insert(
+            node.0.device,
+            (node.0.get_ips(), node.1)
+        );
+    }
+
+    /// Updates or adds new node to the list of [`Node`]s of the [`Contact`]
+    /// 
+    /// Arguments
+    /// 
+    /// * `device` --- [`Node`]'s device number
+    /// * `address` --- pair of [`Addr`] and port to be setted
+    // for inner optimization
+    pub(crate) fn set_or_add_addr(&self, device: u16, address: (Addr, u16)) {
+        (
+            *self.addrs.lock().unwrap()
+        ).insert(
+            device,
+            address
+        );
+    }
+
+    /// Removes node from the list of [`Node`]s of the [`Contact`]
+    /// 
+    /// Arguments
+    /// 
+    /// * `node` --- [`Node`] to be removed
+    pub fn remove_node(&self, node: &Node) {
+        (
+            *self.addrs.lock().unwrap()
+        ).remove(&node.device);
+    }
+
+    /// Removes node from the list of [`Node`]s of the [`Contact`]
+    /// 
+    /// Arguments
+    /// 
+    /// * `device` --- [`Node.device`] to be removed
+    // for inner optimization
+    pub(crate) fn remove_addr(&self, device: u16) {
+        (
+            *self.addrs.lock().unwrap()
+        ).remove(&device);
     }
 }
