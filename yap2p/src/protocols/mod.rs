@@ -70,7 +70,7 @@ bitflags! {
 }
 
 /// Common packet header
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Header {
     /// Protocol type
     pub protocol_type: ProtocolType,
