@@ -166,6 +166,7 @@ pub struct History {
     hard_ttl: u64,
 
     /// Stored [`Message`]s
+    // I'm not actually sure that we really need [`Mutex`] here
     pub messages: Mutex<Vec<Message>>,
 }
 
