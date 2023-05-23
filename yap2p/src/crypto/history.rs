@@ -27,10 +27,10 @@ pub enum Chat {
 
 /// Struct for storing a piece of data to be transmitted.
 pub struct Message {
-    /// Message sender, None may be in [`Chat::Channel`]
+    /// Message sender
     /// Just one heavy (16 bytes for [`PeerId`] + N bytes for name) way to know, who sent this
     /// It could be [`Arc`] | [`Rc`] 
-    pub sender: Option<Peer>,
+    pub sender: Peer,
 
     /// Timestamp of massage creation
     pub timestamp: u64,
@@ -55,7 +55,7 @@ impl Message {
     /// * `key` --- encryption key; it's proposed to store raw data
     /// and use `key` only while sending data through network
     pub fn new(
-        sender: Option<Peer>, 
+        sender: Peer, 
         data: impl AsRef<[u8]>, 
         key: [u8; 32]
     ) -> Message {
@@ -77,7 +77,7 @@ impl Message {
     /// * `key` --- encryption key; it's proposed to store raw data
     /// and use `key` only while sending data through network
     pub fn new_encrypted(
-        sender: Option<Peer>, 
+        sender: Peer, 
         data: &impl AsRef<[u8]>, 
         key: [u8; 32]
     ) -> Message {
@@ -100,7 +100,7 @@ impl Message {
     /// and use `key` only while sending data through network
     /// * `timestamp` --- creation time of message received
     pub fn new_received(
-        sender: Option<Peer>, 
+        sender: Peer, 
         data: &impl AsRef<[u8]>, 
         key: [u8; 32], 
         timestamp: u64
@@ -124,7 +124,7 @@ impl Message {
     /// and use `key` only while sending data through network
     /// * `timestamp` --- creation time of message received
     pub fn new_received_encrypted(
-        sender: Option<Peer>, 
+        sender: Peer, 
         data: &impl AsRef<[u8]>,
         key: [u8; 32],
         timestamp: u64,
@@ -215,7 +215,7 @@ impl History {
     ///
     /// We do not need `&mut self` because of interior mutability
     pub fn add_message(&self, 
-        sender: Option<Peer>, 
+        sender: Peer, 
         data: &impl AsRef<[u8]>, 
         key: [u8; 32]
     ) {
@@ -247,7 +247,7 @@ impl History {
     ///
     /// We do not need `&mut self` because of interior mutability
     pub fn add_message_received(&self, 
-        sender: Option<Peer>, 
+        sender: Peer, 
         data: &impl AsRef<[u8]>, 
         key: [u8; 32], 
         timestamp: u64
@@ -307,7 +307,7 @@ impl History {
 }
 
 /// Struct for synchronizing chat histories on different [`Peer`]s and [`Node`]s
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct ChatSynchronizer {
     /// Chat id
     chat_id: [u8; 32],
