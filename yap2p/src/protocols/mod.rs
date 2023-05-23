@@ -1,5 +1,7 @@
 //! YAP2P protocols logic
 
+#[allow(unused_imports)]
+
 use super::peer::{Peer, PeerId};
 
 use bitflags::bitflags;
@@ -68,7 +70,7 @@ bitflags! {
 }
 
 /// Common packet header
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug)]
 pub struct Header {
     /// Protocol type
     pub protocol_type: ProtocolType,
@@ -88,6 +90,14 @@ pub struct Header {
 
 impl Header {
     /// [`Header`] constructor
+    /// 
+    /// Arguments
+    /// 
+    /// * `protocol_type` --- protocol to be used
+    /// * `packet_type` --- [`PacketType`]
+    /// * `length` --- size of the packet
+    /// * `src_id` --- sender [`PeerId`]
+    /// * `rec_id` --- receiver [`PeerId`]
     pub fn new(
         protocol_type: ProtocolType,
         packet_type: PacketType,
