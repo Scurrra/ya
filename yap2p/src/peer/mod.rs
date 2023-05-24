@@ -284,4 +284,18 @@ impl Contact {
             *self.addrs.lock().unwrap()
         ).remove(&device);
     }
+
+    /// List of alive devices
+    pub(crate) fn devices(&self) -> Vec<u16> {
+        (
+            *self.addrs.lock().unwrap()
+        ).keys().cloned().collect()
+    }
+
+    /// Address of the device
+    pub(crate) fn get_addr(&self, device_id: u16) -> Option<(Addr, u16)> {
+        (
+            *self.addrs.lock().unwrap()
+        ).get(&device_id).copied()
+    }
 }
