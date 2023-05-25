@@ -9,7 +9,8 @@ pub use sdp::*;
 use std::error::Error;
 use std::sync::Mutex;
 use std::collections::VecDeque;
-use std::task::Waker;
+use std::task::{Context, Poll, Waker};
+use std::ops::ControlFlow;
 
 use rand::Rng;
 
@@ -218,4 +219,38 @@ impl Transaction {
 enum ConnectionState {
     Pending,
     Sending(Option<Waker>)
+}
+
+/// An abstraction for specific connection functions
+/// 
+/// ! No receiving functions, because they are into [`Driver`] trait
+pub trait Connection {
+    /// Send service echo packet to another [`Peer`]
+    ///
+    /// Arguments
+    ///
+    /// * `sender` --- [`PeerId`] of *this* [`Node`]
+    /// * `receiver` --- [`Node`] and corresponding port number as tuple
+    fn echo(
+        &self, cx: &mut Context<'_>,
+        sender: &PeerId, receiver: (&Node, u16),
+    ) -> Poll<std::io::Result<usize>>;
+
+    /// Start sending the [`Message`]. Function constructs entities of special [`Transaction`]
+    /// struct which defines which data should be sent. 
+    /// 
+    /// Arguments
+    /// 
+    /// * `chat_t` --- [`Chat`] type 
+    /// * `message` --- the message to be sent
+    /// * `chat_sync` --- synchronization information from the corresponding [`History`]
+    fn send(
+        &self, 
+        chat_t: Chat,
+        message: Message,
+        chat_sync: ChatSynchronizer
+    ) -> ControlFlow<(), u64>;
+
+    /// Exact function that sends [`Transaction`]s
+    fn poll_send(&self, cx: &mut Context<'_>) -> Poll<Result<(), Box<dyn Error>>>;
 }

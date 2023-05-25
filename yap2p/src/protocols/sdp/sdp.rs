@@ -166,18 +166,20 @@ impl SdpConnection {
             state: Mutex::new(ConnectionState::Pending)
         }
     }
+}
 
+impl Connection for SdpConnection {
     /// Send service echo packet to another [`Peer`]
     ///
     /// Arguments
     ///
     /// * `sender` --- [`PeerId`] of *this* [`Node`]
     /// * `receiver` --- [`Node`] and corresponding port number as tuple
-    pub async fn echo(
-        &self,
+    fn echo(
+        &self, cx: &mut Context<'_>,
         sender: &PeerId,
         receiver: (&Node, u16),
-    ) -> std::io::Result<usize> {
+    ) -> Poll<std::io::Result<usize>> {
         let packet = Header::new(
                 ProtocolType::SDP,
                 PacketType::ECHO,
@@ -188,12 +190,12 @@ impl SdpConnection {
             .serialize();
 
         if let Some(addr) = receiver.0.get_ipv6() {
-            return self.socket.send_to(&packet, (addr, receiver.1)).await;
+            return self.socket.poll_send_to(cx, &packet, (addr, receiver.1).into());
         } else if let Some(addr) = receiver.0.get_ipv4() {
-            return self.socket.send_to(&packet, (addr, receiver.1)).await;
+            return self.socket.poll_send_to(cx, &packet, (addr, receiver.1).into());
         } else {
             // there probably will be no errors returned, but...
-            return Err(std::io::Error::last_os_error());
+            return Poll::Ready(Err(std::io::Error::last_os_error()));
         }
     }
 
@@ -205,7 +207,7 @@ impl SdpConnection {
     /// * `chat_t` --- [`Chat`] type 
     /// * `message` --- the message to be sent
     /// * `chat_sync` --- synchronization information from the corresponding [`History`]
-    pub fn send(
+    fn send(
         &self, 
         chat_t: Chat,
         message: Message,
@@ -268,7 +270,7 @@ impl SdpConnection {
         return ControlFlow::Continue(n_packets);
     }
 
-    pub(crate) fn poll_send(&self, cx: &mut Context<'_>) -> Poll<Result<(), Box<dyn Error>>> {
+    fn poll_send(&self, cx: &mut Context<'_>) -> Poll<Result<(), Box<dyn Error>>> {
         // set waker
         // waker will be killed in driver
         let mut state = self.state.lock().unwrap();
