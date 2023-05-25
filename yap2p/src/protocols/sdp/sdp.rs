@@ -9,8 +9,9 @@ use generic_array::{typenum::U16, GenericArray};
 use rand::Rng;
 
 use super::*;
-use crate::crypto::{chunk_data_for_encryption, chunk_data_for_packet_split, history::*};
+use crate::crypto::history::*;
 use crate::peer::*;
+use crate::utils::chunk_data_for_packet_split;
 
 /// Symmenric Datagram Protocol struct
 pub struct SdpConnection {

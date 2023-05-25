@@ -11,13 +11,10 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::collections::{HashMap, VecDeque};
 
-use tokio::net::UdpSocket;
-use futures::channel::mpsc;
-use generic_array::{typenum::U16, GenericArray};
 use rand::Rng;
 
 use super::*;
-use crate::crypto::{chunk_data_for_encryption, chunk_data_for_packet_split, history::*};
+use crate::crypto::history::*;
 use crate::peer::*;
 
 enum SentStatus {

@@ -2,6 +2,8 @@
 
 pub mod peer;
 pub mod crypto;
-pub(crate) mod ip;
 
 pub mod protocols;
+
+pub(crate) mod ip;
+pub(crate) mod utils;
