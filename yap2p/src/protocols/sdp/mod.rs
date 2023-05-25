@@ -9,6 +9,7 @@ pub use sdp::*;
 use std::error::Error;
 use std::sync::Mutex;
 use std::collections::VecDeque;
+use std::task::Waker;
 
 use rand::Rng;
 
@@ -214,4 +215,7 @@ impl Transaction {
     }
 }
 
-
+enum ConnectionState {
+    Pending,
+    Sending(Option<Waker>)
+}

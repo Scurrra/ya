@@ -27,8 +27,8 @@ pub struct SdpConnection {
     /// Only one message at a time, despite that it's not encrypted
     send_queue: Mutex<HashMap<u16, Transaction>>,
 
-    /// Waker for sending pending packets. If there is nothing to send the field is [`None`]
-    send_waker: Option<Waker>
+    /// Waker for sending pending packets. If there is nothing to send field is [`ConnectionState::Pending`]
+    state: Mutex<ConnectionState>
 }
 
 impl SdpConnection {
@@ -163,7 +163,7 @@ impl SdpConnection {
             socket,
             contact,
             send_queue: Mutex::new(HashMap::new()),
-            send_waker: None
+            state: Mutex::new(ConnectionState::Pending)
         }
     }
 
@@ -211,8 +211,15 @@ impl SdpConnection {
         message: Message,
         chat_sync: ChatSynchronizer
     ) -> ControlFlow<(), u64> {
-        if self.send_waker.is_none() {
-            return ControlFlow::Break(());
+        let mut state = self.state.lock().unwrap();
+        match *state {
+            ConnectionState::Sending(_) => {
+                return ControlFlow::Break(());
+            },
+            ConnectionState::Pending => {
+                // will be changed in `poll_send`
+                *state = ConnectionState::Sending(None);
+            }
         }
 
         let mut rng = rand::thread_rng();
@@ -262,6 +269,21 @@ impl SdpConnection {
     }
 
     pub(crate) fn poll_send(&self, cx: &mut Context<'_>) -> Poll<Result<(), Box<dyn Error>>> {
+        // set waker
+        // waker will be killed in driver
+        let mut state = self.state.lock().unwrap();
+        match *state {
+            ConnectionState::Sending(None) => {
+                (*state) = ConnectionState::Sending(Some(
+                    cx.waker().clone()
+                ))
+            },
+            ConnectionState::Pending => {
+                return Poll::Ready(Err("`SdpConnection.poll_send` can't be called on state `ConnectionState::Pending`".into()))
+            }
+            _ => {}
+        }
+
         // does not need to be mutable
         let send_queue = self.send_queue.lock().unwrap();   
         let mut devices_to_be_killed = Vec::new();     
@@ -376,8 +398,7 @@ impl SdpConnection {
         // update: see P. P. S. before the loop
         // here dead connections be killed
         for dead in devices_to_be_killed {
-            (*send_queue)
-                .remove(dead);
+            (*send_queue).remove(dead);
         }
 
         // if we kill all connections, we panic
