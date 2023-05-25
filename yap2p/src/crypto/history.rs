@@ -362,7 +362,7 @@ impl ChatSynchronizer {
 }
 
 /// Wrapper for a message 
-pub(crate) struct MessageWrapper {
+pub struct MessageWrapper {
     chat_t: Chat,
     chat_sync: ChatSynchronizer,
     message: Message
