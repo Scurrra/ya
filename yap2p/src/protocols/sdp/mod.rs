@@ -9,14 +9,18 @@ pub use sdp::*;
 use std::error::Error;
 use std::sync::Mutex;
 use std::collections::VecDeque;
-use std::task::{Context, Poll, Waker};
 use std::ops::ControlFlow;
+use std::task::{Context, Poll, Waker};
+use std::future::Future;
+use std::pin::Pin;
 
 use rand::Rng;
 
 use super::*;
 use crate::crypto::history::*;
 use crate::peer::*;
+
+const CHANNEL_CAPACITY: usize = 13;
 
 enum SentStatus {
     Awaiting,
@@ -253,4 +257,9 @@ pub trait Connection {
 
     /// Exact function that sends [`Transaction`]s
     fn poll_send(&self, cx: &mut Context<'_>) -> Poll<Result<(), Box<dyn Error>>>;
+}
+
+///
+pub trait Driver: Future {
+
 }

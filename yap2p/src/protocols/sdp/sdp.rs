@@ -15,7 +15,9 @@ use crate::crypto::history::*;
 use crate::peer::*;
 use crate::utils::chunk_data_for_packet_split;
 
-/// Symmenric Datagram Protocol struct
+/// Symmenric Datagram Protocol Connection struct
+/// 
+/// This struct is only for sending.
 pub struct SdpConnection {
     /// `UdpSocket`, used for this connection
     socket: Arc<UdpSocket>,
@@ -148,14 +150,13 @@ impl SdpConnection {
 
     //  Functions that do not require connection to the receiver [`Node`]
 
-    /// Create new [`SdpConnection`] connection
+    /// Create new SDP connection
     ///
     /// Arguments
     ///
     /// * `socket` --- [`UdpSocket`], used for the connection
     /// * `contact` --- [`Contact`], tied with the connection
-    pub async fn new(
-        &self, 
+    pub fn new( 
         socket: Arc<UdpSocket>,
         contact: Contact,
     ) -> SdpConnection {
@@ -411,5 +412,70 @@ impl Connection for SdpConnection {
         // no way to return `Poll::Ready(())` because of it's semantics: poll is ready when all packets send 
         // and acknowledged what is checked while handling the message
         return Poll::Pending;
+    }
+}
+
+/// Symmenric Datagram Protocol Driver struct
+/// 
+/// This struct is only for receiving. 
+pub struct SdpDriver {
+    /// List of connections driver is responsible for
+    pub connections: Vec<SdpConnection>,
+
+    /// Channel for sending [`Message`]s
+    pub(crate) sending: mpsc::Receiver<MessageWrapper>,
+
+    /// Channel for receiving [`Message`]s
+    pub(crate) receiving: mpsc::Sender<MessageWrapper>,
+
+    // map of currently handled transmissions
+    handling: HashMap<[u8; 32], Vec<Packet>>
+}
+
+impl SdpDriver {
+
+    /// Create new SDP driver
+    ///
+    /// Arguments
+    ///
+    /// * `socket` --- [`UdpSocket`], used for the driver and inside connections
+    /// * `contacts` --- list of [`Contact`]s, tied with the driver
+    pub fn new(
+        socket: UdpSocket,
+        contacts: Vec<Contact>
+    ) -> (SdpDriver, mpsc::Sender<MessageWrapper>, mpsc::Receiver<MessageWrapper>) {
+        let socket = Arc::new(socket);
+
+        let mut connections = Vec::with_capacity(contacts.len());
+        for contact in contacts {
+            connections.push(
+                SdpConnection::new( 
+                    socket.clone(), 
+                    contact
+                )
+            );
+        }
+
+        let (sending_tx, sending_rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let (receiving_tx, receiving_rx) = mpsc::channel(CHANNEL_CAPACITY);
+
+        let driver = SdpDriver {
+            connections,
+            sending: sending_rx,
+            receiving: receiving_tx,
+            handling: HashMap::new()
+        };
+
+        (driver, sending_tx, receiving_rx)
+    }
+}
+
+impl Future for SdpDriver {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        loop {
+
+        }
     }
 }
