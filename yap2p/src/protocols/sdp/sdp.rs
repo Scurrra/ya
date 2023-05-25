@@ -4,8 +4,10 @@ use std::task::{Context, Poll, Waker};
 use std::collections::{HashMap, VecDeque};
 
 use tokio::net::UdpSocket;
-use futures::channel::mpsc;
-use generic_array::{typenum::U16, GenericArray};
+use futures::{
+    channel::mpsc,
+    ready
+};
 use rand::Rng;
 
 use super::*;
@@ -257,5 +259,134 @@ impl SdpConnection {
         // here to be `self.poll_send()` to set waker
 
         return ControlFlow::Continue(n_packets);
+    }
+
+    pub(crate) fn poll_send(&self, cx: &mut Context<'_>) -> Poll<Result<(), Box<dyn Error>>> {
+        // does not need to be mutable
+        let send_queue = self.send_queue.lock().unwrap();   
+        let mut devices_to_be_killed = Vec::new();     
+        // iterate throw the send_queue
+        // [`Transaction::First`] is checked because it's a match
+        // P. S. if somehow occurs that transactions can't mutate, it't because of `(*send_queue).iter()`  
+        // P. P. S. using `send_queue.iter()` fixes (because of borrow of MutexGuard?)
+        // P. P. P. S. but it also does not allow to delete dead transactions
+        for (device_id, transaction) in (*send_queue).iter() {
+            let addr = self.contact.get_addr(*device_id).unwrap();
+            
+            match transaction {
+                Transaction::First { 
+                    first_packet, 
+                    rest_of_payload: _
+                } => {
+                    // convert `(Addr, u16)` to SocketAddr
+                    if let Some(addr_ip) = addr.0.V6 {
+                        let addr = (addr_ip, addr.1).into();
+
+                        if let Ok(n_bytes_sent) = ready!(self.socket.poll_send_to(
+                            cx, 
+                            first_packet.serialize().as_ref(), 
+                            addr
+                        )) {
+                            // first_packet.sync() is never called, because it should be deleted 
+                            // right after SYN | ACK
+
+                            // if n_bytes_sent as u16 == first_packet.header.length {
+                            //     first_packet.sync();
+                            // }
+                        } // if wasn't sent, it will not be sync
+                    } else if let Some(addr_ip) = addr.0.V4 {
+                        // oh, it's not *dry*
+                        // WET CODE!
+                        let addr = (addr_ip, addr.1).into();
+
+                        if let Ok(n_bytes_sent) = ready!(self.socket.poll_send_to(
+                            cx, 
+                            first_packet.serialize().as_ref(), 
+                            addr
+                        )) {
+                            // first_packet.sync() is never called, because it should be deleted 
+                            // right after SYN | ACK
+
+                            // if n_bytes_sent as u16 == first_packet.header.length {
+                            //     first_packet.sync();
+                            // }
+                        } // if wasn't sent, it will not be sync
+                    } else {
+                        // this should be empty
+                        // but if destination host is dead, we should somehow delete it
+
+                        // may be will work, at least should
+                        devices_to_be_killed.push(device_id);
+                    };                   
+                }
+
+                Transaction::Rest { 
+                    first_packet_id: _, // dead logic, at least for now
+                    payload 
+                } => {
+                    let mut payload = payload.lock().unwrap();
+                    let current_packet = (*payload).pop_front().unwrap();
+
+                    // convert `(Addr, u16)` to SocketAddr
+                    // change logic if it's changed in previous case
+                    if let Some(addr_ip) = addr.0.V6 {
+                        let addr = (addr_ip, addr.1).into();
+
+                        if let Ok(n_bytes_sent) = ready!(self.socket.poll_send_to(
+                            cx, 
+                            current_packet.serialize().as_ref(), 
+                            addr
+                        )) {
+                            if n_bytes_sent as u16 == current_packet.header.length {
+                                current_packet.sync();
+                            }
+                        } // if wasn't sent, it will not be sync
+                    } else if let Some(addr_ip) = addr.0.V4 {
+                        // oh, it's not *dry*
+                        // WET CODE!
+                        let addr = (addr_ip, addr.1).into();
+
+                        if let Ok(n_bytes_sent) = ready!(self.socket.poll_send_to(
+                            cx, 
+                            current_packet.serialize().as_ref(), 
+                            addr
+                        )) {
+                            if n_bytes_sent as u16 == current_packet.header.length {
+                                current_packet.sync();
+                            }
+                        } // if wasn't sent, it will not be sync
+                    } else {
+                        // this should be empty
+                        // but if destination host is dead, we should somehow delete it
+
+                        // may be will work
+                        devices_to_be_killed.push(device_id);
+                    };
+
+                    // so packet is pushed to the end of the queue
+                    // even packet with status `SentStatus::Synchronizing` can be sent again 
+                    // I don't want to add timer here, but may be timer should be restarted after the last sending
+                    (*payload).push_back(current_packet);
+                }
+            }
+        }
+        
+        // because of immutable borrow in previous loop
+        let mut send_queue = self.send_queue.lock().unwrap();
+        // update: see P. P. S. before the loop
+        // here dead connections be killed
+        for dead in devices_to_be_killed {
+            (*send_queue)
+                .remove(dead);
+        }
+
+        // if we kill all connections, we panic
+        if send_queue.len() == 0 {
+            return Poll::Ready(Err("All `Nodes` are dead before end of the transaction".into()));
+        }
+
+        // no way to return `Poll::Ready(())` because of it's semantics: poll is ready when all packets send 
+        // and acknowledged what is checked while handling the message
+        return Poll::Pending;
     }
 }

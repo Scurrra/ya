@@ -7,9 +7,8 @@ mod sdp;
 pub use sdp::*;
 
 use std::error::Error;
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll, Waker};
-use std::collections::{HashMap, VecDeque};
+use std::sync::Mutex;
+use std::collections::VecDeque;
 
 use rand::Rng;
 
@@ -84,7 +83,7 @@ impl Packet {
         return packet;
     }
 
-    pub(crate) fn sync(self) {
+    pub(crate) fn sync(&self) {
         *self.status.lock().unwrap() = SentStatus::Synchronizing;
     }
 }
