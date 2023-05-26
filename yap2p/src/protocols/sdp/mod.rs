@@ -262,12 +262,18 @@ pub trait Connection {
 
 /// Wrapper for a list of payloads of received [`Packet`]s
 // May be the struct name is not the best
-pub(crate) struct MessageHandler {
+pub struct MessageHandler {
+    /// Type of the chat [`Packet`]/[`Message`] belongs to
+    chat_t: Chat,
+
+    /// Timestamp of the last [`Message`] in the chat [`History`] 
+    timestamp_l: u64,
+
     /// Synchronizer for the only first packet of the [`Transaction`]
     first_packet_sync: PacketSynchronizer,
 
-    /// Payloads of all received [`Packet`]s
-    data: Vec<Vec<u8>>
+    /// Payloads of all received [`Packet`]s alongside their ids
+    data: Vec<(u64, Vec<u8>)>
 }
 
 /// An abstraction for specific driver functions
@@ -275,7 +281,8 @@ pub(crate) struct MessageHandler {
 /// ! No sendinging functions, because they are into the [`Connection`] trait.
 /// ! Alongside this trait the [`Future`] trait must be implemented.
 pub trait Driver: Future {
-    /// Function for handling a single datagram
+    /// Function for handling a single datagram. This function also handles single-only packets of types
+    /// [`PacketType::HI`] | [`PacketType::INIT`] | [`PacketType::ECHO`]
     /// 
     /// Arguments 
     /// 
@@ -287,9 +294,9 @@ pub trait Driver: Future {
     /// Function panics if there is no opened connections to the specified address
     fn handle_dataram(
         &mut self, 
-        packet: Vec<u8>, 
+        packet: &Vec<u8>, 
         packet_src: SocketAddr
-    ) -> ControlFlow<(), Result<Option<[u8; 32]>, Box<dyn Error>>>;
+    ) -> ControlFlow<Result<(), Box<dyn Error>>, [u8; 32]>;
 
     /// Function for handling a single message
     /// 
@@ -299,5 +306,5 @@ pub trait Driver: Future {
     fn handle_message(
         &mut self, 
         chat_id: &[u8; 32]
-    ) -> ControlFlow<(), Result<(), Box<dyn Error>>>;
+    ) -> ControlFlow<Result<(), Box<dyn Error>>, ()>;
 }

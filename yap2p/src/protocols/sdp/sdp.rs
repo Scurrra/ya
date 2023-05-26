@@ -1,4 +1,5 @@
 use std::ops::ControlFlow;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::collections::{HashMap, VecDeque};
@@ -148,8 +149,6 @@ impl SdpConnection {
         }
     }
 
-    //  Functions that do not require connection to the receiver [`Node`]
-
     /// Create new SDP connection
     ///
     /// Arguments
@@ -166,6 +165,28 @@ impl SdpConnection {
             send_queue: Mutex::new(HashMap::new()),
             state: Mutex::new(ConnectionState::Pending)
         }
+    }
+
+    //  Functions that do require connection to the receiver [`Node`]
+
+    /// Function for checking if [`SdpConnection`] is connected to the specified [`SocketAddr`]
+    pub fn check_addr(&self, socket_addr: SocketAddr) -> Option<u16> {
+        let addrs = self.contact.addrs.lock().unwrap();
+        if addrs.len() == 0 {
+            return None;
+        }
+        
+        let addr_ip = socket_addr.ip();
+        let addr_port = socket_addr.port();
+
+        if let Some(device) = addrs.iter()
+            .find(
+                |(id, addr)| addr.0.satisfies(addr_ip) && addr.1 == addr_port
+            ){
+            return Some(device.0.to_owned());
+        }
+
+        return None;
     }
 }
 
@@ -419,17 +440,21 @@ impl Connection for SdpConnection {
 /// 
 /// This struct is only for receiving. 
 pub struct SdpDriver {
+    /// [`PeerId`] of current [`Peer`]
+    pub peer_id: PeerId,
+
     /// List of connections driver is responsible for
     pub connections: Vec<SdpConnection>,
 
     /// Channel for sending [`Message`]s
     pub(crate) sending: mpsc::Receiver<MessageWrapper>,
 
-    /// Channel for receiving [`Message`]s
+    /// Channel for receiving [`Message`]s, including `INIT` and `HI`
     pub(crate) receiving: mpsc::Sender<MessageWrapper>,
 
-    // map of currently handled transmissions
-    handling: HashMap<[u8; 32], MessageHandler>
+    // maps of currently handled transmissions
+    handling: HashMap<[u8; 32], MessageHandler>, // for `SYN`
+    acknowledging: HashMap<[u8; 32], Vec<u64>> // for `ACK`
 }
 
 impl SdpDriver {
@@ -441,6 +466,7 @@ impl SdpDriver {
     /// * `socket` --- [`UdpSocket`], used for the driver and inside connections
     /// * `contacts` --- list of [`Contact`]s, tied with the driver
     pub fn new(
+        peer_id: &PeerId,
         socket: UdpSocket,
         contacts: Vec<Contact>
     ) -> (SdpDriver, mpsc::Sender<MessageWrapper>, mpsc::Receiver<MessageWrapper>) {
@@ -460,10 +486,12 @@ impl SdpDriver {
         let (receiving_tx, receiving_rx) = mpsc::channel(CHANNEL_CAPACITY);
 
         let driver = SdpDriver {
+            peer_id: peer_id.clone(),
             connections,
             sending: sending_rx,
             receiving: receiving_tx,
-            handling: HashMap::new()
+            handling: HashMap::new(),
+            acknowledging: HashMap::new()
         };
 
         (driver, sending_tx, receiving_rx)
@@ -471,7 +499,8 @@ impl SdpDriver {
 }
 
 impl Driver for SdpDriver {
-    /// Function for handling a single datagram
+    /// Function for handling a single datagram. This function also handles single-only packets of types
+    /// [`PacketType::HI`] | [`PacketType::INIT`] | [`PacketType::ECHO`]
     /// 
     /// Arguments 
     /// 
@@ -483,11 +512,279 @@ impl Driver for SdpDriver {
     /// Function panics if there is no opened connections to the specified address
     fn handle_dataram(
         &mut self, 
-        packet: Vec<u8>, 
+        packet: &Vec<u8>, 
         packet_src: SocketAddr
-    ) -> ControlFlow<(), Result<Option<[u8; 32]>, Box<dyn Error>>>{
+    ) -> ControlFlow<Result<(), Box<dyn Error>>, [u8; 32]>{
 
-        ControlFlow::Break(())
+        // [`Packet`] [`Header`] processing
+        let header = Header::deserialize(packet[0..36].to_vec());
+        // check if packet is `ECHO`
+        if header.packet_type.contains(PacketType::ECHO) {
+            // check destination
+            if header.rec_id != self.peer_id {
+                return ControlFlow::Break(Err("'ECHO' for another peer. May be an attack".into()));
+            }
+
+            if header.packet_type == PacketType::ECHO {
+                return ControlFlow::Break(Ok(()));
+            } else {
+                return ControlFlow::Break(Err("Bad constructed 'ECHO' packet".into()));
+            }
+        }
+        // check destination
+        if header.rec_id != self.peer_id {
+            return ControlFlow::Break(Err("Wrong receiver".into()));
+        }
+        // check protocol type
+        if header.protocol_type != ProtocolType::SDP {
+            return ControlFlow::Break(Err("It's not an SDP packet".into()));
+        }
+        // check packet length
+        if header.length as usize != packet.len() {
+            return ControlFlow::Break(Err("Packet length mismatch".into()));
+        }
+        // obtain packet and chat type
+        let (packet_type, chat_t) = if header.packet_type.contains(PacketType::CHAT) {
+            (header.packet_type.difference(PacketType::CHAT), Chat::OneToOne)
+        } else if header.packet_type.contains(PacketType::CHAN) {
+            (header.packet_type.difference(PacketType::CHAN), Chat::Channel)
+        } else if header.packet_type.contains(PacketType::CONV) {
+            (header.packet_type.difference(PacketType::CONV), Chat::Group)
+        } else {
+            return ControlFlow::Break(Err("Wrong packet type".into()));
+        };
+
+        // check packet type
+        match packet_type {
+            PacketType::INIT => { 
+                // chat for initializing
+                let chat_sync = ChatSynchronizer::deserialize(packet[36..76].to_vec());
+                // message sender
+                let src_peer = if let Some(alive_conn) = self.connections.iter()
+                    .find(
+                |   conn| conn.contact.peer.id == header.src_id
+                ){
+                    match alive_conn.check_addr(packet_src) {
+                        None => return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into())),
+                        Some(_) => alive_conn.contact.peer.clone()
+                    }
+                } else {
+                    return ControlFlow::Break(Err("No connections to the source peer".into()));
+                };
+                // finally sending handled message to channel
+                if let Err(e) = self.receiving.try_send(
+                    MessageWrapper::Initial { 
+                            ack: false, 
+                            peer: src_peer, 
+                            history: chat_sync
+                }) {
+                    // attempt to handle channel error
+                    return ControlFlow::Break(Err(e.into()));
+                }
+            },
+            PacketType::HI => {
+                let chats_n = ((header.length - 36) / 40) as usize;
+                // chats for synchronization
+                let mut chat_syncs = Vec::with_capacity(chats_n.into());
+                for chat_i in 0..chats_n {
+                    chat_syncs.push(
+                        ChatSynchronizer::deserialize(packet[(36+chat_i*40)..(36+(chat_i+1)*40)].to_vec())
+                    );
+                }
+                // message sender
+                let src_peer = if let Some(alive_conn) = self.connections.iter()
+                    .find(
+                |   conn| conn.contact.peer.id == header.src_id
+                ){
+                    match alive_conn.check_addr(packet_src) {
+                        None => return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into())),
+                        Some(_) => alive_conn.contact.peer.clone()
+                    }
+                } else {
+                    return ControlFlow::Break(Err("No connections to the source peer".into()));
+                };
+                // finally sending handled message to channel
+                if let Err(e) = self.receiving.try_send(
+                    MessageWrapper::Recover { 
+                            ack: false, 
+                            peer: src_peer, 
+                            histories: chat_syncs
+                }) {
+                    // attempt to handle channel error
+                    return ControlFlow::Break(Err(e.into()));
+                }
+            },
+            PacketType::SYN => {
+                // chat for the message
+                let chat_sync = ChatSynchronizer::deserialize(packet[36..76].to_vec());
+                // check if connection is alive
+                if let Some(alive_conn) = self.connections.iter()
+                    .find(
+                        |conn| conn.contact.peer.id == header.src_id
+                ){
+                    match alive_conn.check_addr(packet_src) {
+                        None => {
+                            // drop transaction if it is started
+                            self.handling.remove(&chat_sync.chat_id);
+                            return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into()))
+                        },
+                        Some(_) => {}
+                    }
+                } else {
+                    // drop transaction if it is started
+                    self.handling.remove(&chat_sync.chat_id);
+                    return ControlFlow::Break(Err("No connections to the source peer".into()));
+                };
+                
+                // getting packet synchronizer from 
+                let packet_sync = PacketSynchronizer::deserialize(packet[76..100].to_vec());
+                // add packet to the handling list
+                if self.handling.contains_key(&chat_sync.chat_id) {
+                    // I hope it will work
+                    if let Some(data) = self.handling.get_mut(&chat_sync.chat_id) {
+                        data.data.push((packet_sync.packet_id, packet[100..].to_vec()));
+                    }
+                } else { // first message in the transaction
+                    self.handling.insert(
+                        chat_sync.chat_id,
+                        MessageHandler { 
+                            chat_t: chat_t, 
+                            timestamp_l: chat_sync.timestamp, 
+                            first_packet_sync: packet_sync, 
+                            data: Vec::from([(packet_sync.packet_id, packet[100..].to_vec())]) 
+                        } 
+                    );
+                }
+            },
+            PacketType::ACK_INIT => { // like `INIT`, but another flag
+                // chat for initializing
+                let chat_sync = ChatSynchronizer::deserialize(packet[36..76].to_vec());
+                // message sender
+                let src_peer = if let Some(alive_conn) = self.connections.iter()
+                    .find(
+                |   conn| conn.contact.peer.id == header.src_id
+                ){
+                    match alive_conn.check_addr(packet_src) {
+                        None => return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into())),
+                        Some(_) => alive_conn.contact.peer.clone()
+                    }
+                } else {
+                    return ControlFlow::Break(Err("No connections to the source peer".into()));
+                };
+                // finally sending handled message to channel
+                if let Err(e) = self.receiving.try_send(
+                    MessageWrapper::Initial { 
+                            ack: true, 
+                            peer: src_peer, 
+                            history: chat_sync
+                }) {
+                    // attempt to handle channel error
+                    return ControlFlow::Break(Err(e.into()));
+                }
+            },
+            PacketType::ACK_HI => { // like `HI`, but another flag
+                let chats_n = ((header.length - 36) / 40) as usize;
+                // chats for synchronization
+                let mut chat_syncs = Vec::with_capacity(chats_n.into());
+                for chat_i in 0..chats_n {
+                    chat_syncs.push(
+                        ChatSynchronizer::deserialize(packet[(36+chat_i*40)..(36+(chat_i+1)*40)].to_vec())
+                    );
+                }
+                // message sender
+                let src_peer = if let Some(alive_conn) = self.connections.iter()
+                    .find(
+                |   conn| conn.contact.peer.id == header.src_id
+                ){
+                    match alive_conn.check_addr(packet_src) {
+                        None => return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into())),
+                        Some(_) => alive_conn.contact.peer.clone()
+                    }
+                } else {
+                    return ControlFlow::Break(Err("No connections to the source peer".into()));
+                };
+                // finally sending handled message to channel
+                if let Err(e) = self.receiving.try_send(
+                    MessageWrapper::Recover { 
+                            ack: true, 
+                            peer: src_peer, 
+                            histories: chat_syncs
+                }) {
+                    // attempt to handle channel error
+                    return ControlFlow::Break(Err(e.into()));
+                }
+            },
+            PacketType::ACK_SYN => {
+                // chat for the message
+                let chat_sync = ChatSynchronizer::deserialize(packet[36..76].to_vec());
+                // check if connection is alive
+                if let Some(alive_conn) = self.connections.iter()
+                    .find(
+                        |conn| conn.contact.peer.id == header.src_id
+                ){
+                    match alive_conn.check_addr(packet_src) {
+                        None => {
+                            // drop transaction if it is started
+                            self.handling.remove(&chat_sync.chat_id);
+                            return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into()))
+                        },
+                        Some(_) => {}
+                    }
+                } else {
+                    // drop transaction if it is started
+                    self.handling.remove(&chat_sync.chat_id);
+                    return ControlFlow::Break(Err("No connections to the source peer".into()));
+                };
+                
+                // getting packet synchronizer from 
+                let packet_sync = PacketSynchronizer::deserialize(packet[76..100].to_vec());
+                // first message in the transaction
+                if let Some(_) = self.acknowledging.insert(
+                        chat_sync.chat_id,
+                        Vec::from([packet_sync.packet_id])
+                ){
+                    return ControlFlow::Break(Err("Try to receive `ACK_SYN` once again".into()));
+                }
+            },
+            PacketType::ACK => {
+                // chat for the message
+                let chat_sync = ChatSynchronizer::deserialize(packet[36..76].to_vec());
+                // check if connection is alive
+                if let Some(alive_conn) = self.connections.iter()
+                    .find(
+                        |conn| conn.contact.peer.id == header.src_id
+                ){
+                    match alive_conn.check_addr(packet_src) {
+                        None => {
+                            // drop transaction if it is started
+                            self.handling.remove(&chat_sync.chat_id);
+                            return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into()))
+                        },
+                        Some(_) => {}
+                    }
+                } else {
+                    // drop transaction if it is started
+                    self.handling.remove(&chat_sync.chat_id);
+                    return ControlFlow::Break(Err("No connections to the source peer".into()));
+                };
+                
+                // getting packet synchronizer from 
+                let packet_sync = PacketSynchronizer::deserialize(packet[76..100].to_vec());
+                // add packet to the handling list
+                if self.handling.contains_key(&chat_sync.chat_id) {
+                    // I hope it will work
+                    if let Some(data) = self.acknowledging.get_mut(&chat_sync.chat_id) {
+                        data.push(packet_sync.packet_id);
+                    }
+                }
+            },
+            _ => {
+                return ControlFlow::Break(Err("Unkhown packet type".into()));
+            }
+        }
+        
+        // if everything okay
+        ControlFlow::Break(Ok(()))
     }
 
     /// Function for handling a single message
@@ -498,9 +795,9 @@ impl Driver for SdpDriver {
     fn handle_message(
         &mut self, 
         chat_id: &[u8; 32]
-    ) -> ControlFlow<(), Result<(), Box<dyn Error>>>{
+    ) -> ControlFlow<Result<(), Box<dyn Error>>, ()> {
 
-        ControlFlow::Break(())
+        ControlFlow::Break(Ok(()))
     }
 }
 
