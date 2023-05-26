@@ -218,7 +218,7 @@ pub struct Contact {
     pub peer: Peer,
 
     /// [`HashMap`] that refers pairs (address, port) to corresponding [`Node.device`]
-    addrs: Mutex<HashMap<u16, (Addr, u16)>>
+    pub(crate) addrs: Mutex<HashMap<u16, (Addr, u16)>>
 }
 
 impl Contact {
