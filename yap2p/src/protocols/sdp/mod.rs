@@ -7,6 +7,7 @@ mod sdp;
 pub use sdp::*;
 
 use std::error::Error;
+use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::collections::VecDeque;
 use std::ops::ControlFlow;
@@ -97,7 +98,7 @@ impl Packet {
 /// Struct for synchronizing [`Packet`]s transactions
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct PacketSynchronizer {
-    /// Timestamp of current transaction
+    /// Timestamp of current [`Transaction`]
     timestamp: u64,
 
     /// Number of packets in current transaction
@@ -227,7 +228,7 @@ enum ConnectionState {
 
 /// An abstraction for specific connection functions
 /// 
-/// ! No receiving functions, because they are into [`Driver`] trait
+/// ! No receiving functions, because they are into the [`Driver`] trait
 pub trait Connection {
     /// Send service echo packet to another [`Peer`]
     ///
@@ -259,7 +260,44 @@ pub trait Connection {
     fn poll_send(&self, cx: &mut Context<'_>) -> Poll<Result<(), Box<dyn Error>>>;
 }
 
-///
-pub trait Driver: Future {
+/// Wrapper for a list of payloads of received [`Packet`]s
+// May be the struct name is not the best
+pub(crate) struct MessageHandler {
+    /// Synchronizer for the only first packet of the [`Transaction`]
+    first_packet_sync: PacketSynchronizer,
 
+    /// Payloads of all received [`Packet`]s
+    data: Vec<Vec<u8>>
+}
+
+/// An abstraction for specific driver functions
+/// 
+/// ! No sendinging functions, because they are into the [`Connection`] trait.
+/// ! Alongside this trait the [`Future`] trait must be implemented.
+pub trait Driver: Future {
+    /// Function for handling a single datagram
+    /// 
+    /// Arguments 
+    /// 
+    /// * `packet` --- the received packet
+    /// * `packet_src` --- [`SocketAddr`] `packet` was received from
+    /// 
+    /// Panics
+    /// 
+    /// Function panics if there is no opened connections to the specified address
+    fn handle_dataram(
+        &mut self, 
+        packet: Vec<u8>, 
+        packet_src: SocketAddr
+    ) -> ControlFlow<(), Result<Option<[u8; 32]>, Box<dyn Error>>>;
+
+    /// Function for handling a single message
+    /// 
+    /// Arguments 
+    /// 
+    /// * `chat_id` --- id of the chat the message belongs to
+    fn handle_message(
+        &mut self, 
+        chat_id: &[u8; 32]
+    ) -> ControlFlow<(), Result<(), Box<dyn Error>>>;
 }

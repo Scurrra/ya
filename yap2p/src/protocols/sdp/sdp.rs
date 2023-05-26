@@ -429,7 +429,7 @@ pub struct SdpDriver {
     pub(crate) receiving: mpsc::Sender<MessageWrapper>,
 
     // map of currently handled transmissions
-    handling: HashMap<[u8; 32], Vec<Packet>>
+    handling: HashMap<[u8; 32], MessageHandler>
 }
 
 impl SdpDriver {
@@ -467,6 +467,40 @@ impl SdpDriver {
         };
 
         (driver, sending_tx, receiving_rx)
+    }
+}
+
+impl Driver for SdpDriver {
+    /// Function for handling a single datagram
+    /// 
+    /// Arguments 
+    /// 
+    /// * `packet` --- the received packet
+    /// * `packet_src` --- [`SocketAddr`] `packet` was received from
+    /// 
+    /// Panics
+    /// 
+    /// Function panics if there is no opened connections to the specified address
+    fn handle_dataram(
+        &mut self, 
+        packet: Vec<u8>, 
+        packet_src: SocketAddr
+    ) -> ControlFlow<(), Result<Option<[u8; 32]>, Box<dyn Error>>>{
+
+        ControlFlow::Break(())
+    }
+
+    /// Function for handling a single message
+    /// 
+    /// Arguments 
+    /// 
+    /// * `chat_id` --- id of the chat the message belongs to
+    fn handle_message(
+        &mut self, 
+        chat_id: &[u8; 32]
+    ) -> ControlFlow<(), Result<(), Box<dyn Error>>>{
+
+        ControlFlow::Break(())
     }
 }
 
