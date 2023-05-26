@@ -10,7 +10,7 @@ use serde::{Serialize, Deserialize};
 use bincode;
 
 use super::keychain::KeyChain;
-use crate::peer::*;
+use crate::{peer::*, protocols::PacketType};
 
 /// Chat type
 pub enum Chat {
@@ -375,6 +375,8 @@ pub enum MessageWrapper {
 
     /// `HI` packet
     Recover {
+        /// Is it an ackhowledgement packet 
+        ack: bool,
         /// Packet sender
         peer: Peer,
         /// List of [`History`]s sender wants to synchronize
@@ -383,6 +385,8 @@ pub enum MessageWrapper {
 
     /// `INIT` packet
     Initial {
+        /// Is it an ackhowledgement packet 
+        ack: bool,
         /// Packet sender
         peer: Peer,
         /// [`History`] to be initialised
