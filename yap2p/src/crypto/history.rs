@@ -353,7 +353,7 @@ impl ChatSynchronizer {
     /// 
     /// This function panics if `bytes.len() != 40` 
     #[track_caller]
-    pub fn deserialize(bytes: Vec<u8>) -> ChatSynchronizer {
+    pub fn deserialize(bytes: &Vec<u8>) -> ChatSynchronizer {
         match bincode::deserialize(&bytes) {
             Ok(chat_sync) => chat_sync,
             Err(_) => panic!("Wrong size of `ChatSynchronizer`"),
