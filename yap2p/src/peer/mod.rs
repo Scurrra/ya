@@ -6,7 +6,7 @@
 use serde::{Serialize, Deserialize};
 use sha2::{Sha512, Digest};
 
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{Ipv4Addr, Ipv6Addr, IpAddr};
 use std::sync::Mutex;
 use std::collections::HashMap;
 
@@ -112,6 +112,23 @@ pub struct Addr {
 
     /// IPv6 address
     pub V6: Option<Ipv6Addr>
+}
+
+impl Addr {
+    /// Function to check if given [`IpAddr`] is in struct
+    pub fn satisfies(&self, ip_addr: IpAddr) -> bool {
+        if let Some(ipv4_addr) = self.V4 {
+            if ipv4_addr == ip_addr {
+                return true;
+            }
+        }
+        if let Some(ipv6_addr) = self.V6 {
+            if ipv6_addr == ip_addr {
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 /// `Node` struct
