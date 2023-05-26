@@ -370,7 +370,7 @@ pub enum MessageWrapper {
         /// Synchronizer of the history
         chat_sync: ChatSynchronizer,
         /// Transmitted [`Message`]
-        payload: Message
+        payload: Vec<u8>
     },
 
     /// `HI` packet

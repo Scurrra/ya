@@ -796,7 +796,56 @@ impl Driver for SdpDriver {
         &mut self, 
         chat_id: &[u8; 32]
     ) -> ControlFlow<Result<(), Box<dyn Error>>, ()> {
+        if let Some(mut handler) = self.handling.remove(chat_id) {
+            // wrong first packet
+            if handler.data[0].0 != handler.first_packet_sync.packet_id {
+                return ControlFlow::Break(Err("Wrong first packet".into()));
+            }
+            // wrong quantity of packets
+            if handler.data.len() != handler.first_packet_sync.n_packets as usize {
+                return ControlFlow::Break(Err("Wrong number of packets".into()));
+            }
+            
+            handler.data
+                .sort_by(
+                    |(packet_id_1, _), (packet_id_2, _)| 
+                    packet_id_1.cmp(packet_id_2)
+            );
 
+            // wrong quantity of packets, but deduped
+            let mut ids = handler.data.iter()
+                .map(|(id, _)| id.to_owned())
+                .collect::<Vec<u64>>();
+            ids.dedup();
+            if ids.len() != handler.first_packet_sync.n_packets as usize {
+                return ControlFlow::Break(Err("Wrong number of packets".into()));
+            }
+            if ids.last().unwrap() - ids.first().unwrap() + 1 != handler.first_packet_sync.n_packets {
+                return ControlFlow::Break(Err("Wrong packets order".into()));
+            }
+            
+            // collect payload
+            let payload = handler.data.iter()
+                .map(|(_, data)| data.to_owned())
+                .collect::<Vec<Vec<u8>>>()
+                .concat();
+            
+            if let Err(e) = self.receiving.try_send(
+                MessageWrapper::Regular { 
+                    chat_t: handler.chat_t, 
+                    chat_sync: ChatSynchronizer { 
+                        chat_id: chat_id.to_owned(), 
+                        timestamp: handler.timestamp_l
+                    }, 
+                    payload: payload 
+                }  
+            ) {
+                // attempt to handle channel error
+                return ControlFlow::Break(Err(e.into()));
+            }
+        } else {
+            return ControlFlow::Break(Err("Can't get message handler".into()));
+        }
         ControlFlow::Break(Ok(()))
     }
 }
