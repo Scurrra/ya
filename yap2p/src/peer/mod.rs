@@ -19,7 +19,7 @@ use crate::crypto::dh::DH;
 /// - 1 byte is considered to be constant, in current implementation of library `42 | 69`
 /// - 2-8 bytes hold [`Peer`]'s public key, used for Diffie-Hellman key exchange
 /// - 9-16 bytes hold `username`'s hash checksum
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PeerId {
     pub(crate) inner: [u8; 16]
 }
