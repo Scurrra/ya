@@ -130,7 +130,7 @@ impl PacketSynchronizer {
     /// 
     /// This function panics if `bytes.len() != 24`
     #[track_caller]
-    pub fn deserialize(bytes: &Vec<u8>) -> PacketSynchronizer {
+    pub fn deserialize(bytes: Vec<u8>) -> PacketSynchronizer {
         match bincode::deserialize(&bytes) {
             Ok(pack_sync) => pack_sync,
             Err(_) => panic!("Wrong size of `PacketSynchronizer`"),

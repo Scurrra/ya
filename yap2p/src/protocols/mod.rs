@@ -127,7 +127,7 @@ impl Header {
     /// 
     /// This function panics if `bytes.len() != 36` 
     #[track_caller]
-    pub fn deserialize(bytes: &Vec<u8>) -> Header {
+    pub fn deserialize(bytes: Vec<u8>) -> Header {
         match bincode::deserialize(&bytes) {
             Ok(header) => header,
             Err(_) => panic!("Wrong size of `Header`"),
