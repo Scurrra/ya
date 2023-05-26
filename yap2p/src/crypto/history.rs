@@ -310,10 +310,10 @@ impl History {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct ChatSynchronizer {
     /// Chat id
-    chat_id: [u8; 32],
+    pub chat_id: [u8; 32],
     
     /// Timestamp of last message stored
-    timestamp: u64
+    pub timestamp: u64
 }
 
 impl ChatSynchronizer {
@@ -361,9 +361,33 @@ impl ChatSynchronizer {
     }
 }
 
-/// Wrapper for a message 
-pub struct MessageWrapper {
-    chat_t: Chat,
-    chat_sync: ChatSynchronizer,
-    message: Message
+/// Wrapper for a standard message 
+pub enum MessageWrapper {
+    /// Regular message from `SYN` packet
+    Regular {
+        /// Type of the chat
+        chat_t: Chat,
+        /// Synchronizer of the history
+        chat_sync: ChatSynchronizer,
+        /// Transmitted [`Message`]
+        payload: Message
+    },
+
+    /// `HI` packet
+    Recover {
+        /// Packet sender
+        peer: Peer,
+        /// List of [`History`]s sender wants to synchronize
+        histories: Vec<ChatSynchronizer>
+    },
+
+    /// `INIT` packet
+    Initial {
+        /// Packet sender
+        peer: Peer,
+        /// [`History`] to be initialised
+        history: ChatSynchronizer
+    }
 }
+
+
