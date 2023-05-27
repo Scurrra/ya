@@ -10,7 +10,7 @@ use serde::{Serialize, Deserialize};
 use bincode;
 
 use super::keychain::KeyChain;
-use crate::{peer::*, protocols::PacketType};
+use crate::peer::*;
 
 /// Chat type
 #[derive(Debug, Clone, Copy)]
