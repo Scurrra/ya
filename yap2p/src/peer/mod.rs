@@ -196,7 +196,7 @@ impl Node {
     /// Function for obtaining [`Node`]'s IPs. Needed to hide `std::sync::Mutex`
     /// from the user
     pub fn get_ips(&self) -> Addr {
-        *self.addrs.lock().unwrap()
+        self.addrs.lock().unwrap().to_owned()
     }
 
     /// Function for obtaining [`Node`]'s IPv4. Needed to hide `std::sync::Mutex`
