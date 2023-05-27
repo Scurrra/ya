@@ -34,7 +34,7 @@ pub struct SdpConnection {
     send_queue: Mutex<HashMap<u16, Transaction>>,
 
     /// Waker for sending pending packets. If there is nothing to send field is [`ConnectionState::Pending`]
-    state: Mutex<ConnectionState>
+    state: Mutex<ConnectionWaker>
 }
 
 impl SdpConnection {
@@ -166,7 +166,10 @@ impl SdpConnection {
             socket,
             contact,
             send_queue: Mutex::new(HashMap::new()),
-            state: Mutex::new(ConnectionState::Pending)
+            state: Mutex::new(ConnectionWaker {
+                state: ConnectionState::Pending,
+                waker: None
+            })
         }
     }
 
@@ -184,12 +187,36 @@ impl SdpConnection {
 
         if let Some(device) = addrs.iter()
             .find(
-                |(id, addr)| addr.0.satisfies(addr_ip) && addr.1 == addr_port
+                |(_, addr)| addr.0.satisfies(addr_ip) && addr.1 == addr_port
             ){
             return Some(device.0.to_owned());
         }
 
         return None;
+    }
+
+    /// Construct the rest of the packets for `device_id`
+    // We need this because of its Rust, you know
+    pub fn construct_rest(&self, device_id: u16) {
+        let mut send_queue = self.send_queue.lock().unwrap();
+        let transaction = send_queue.remove(&device_id).unwrap();
+        (*send_queue).insert(
+            device_id,
+            transaction.construct_rest()
+        );
+    }
+
+    /// Try to wake sending process. Works only if state is 'Sending', ignores otherwise.
+    pub fn try_wake_sending(&self) {
+        let mut conn_waker = self.state.lock().unwrap();
+        match (*conn_waker).state {
+            ConnectionState::Sending => {
+                if let Some(waker) = (*conn_waker).waker.take() {
+                    waker.wake();
+                }
+            },
+            _ => {}
+        }
     }
 }
 
@@ -238,17 +265,18 @@ impl Connection for SdpConnection {
         message: Message,
         chat_sync: ChatSynchronizer
     ) -> ControlFlow<Result<(), Box<dyn Error>>, u64> {
-        let mut state = self.state.lock().unwrap();
-        match *state {
+        let mut conn_state = self.state.lock().unwrap();
+        match (*conn_state).state {
             ConnectionState::Receiving => {
                 return ControlFlow::Break(Err("Connection is blocked for sending because of receiving".into()));
             },
-            ConnectionState::Sending(_) => {
+            ConnectionState::Sending => {
                 return ControlFlow::Break(Ok(()));
             },
             ConnectionState::Pending => {
                 // will be changed in `poll_send`
-                *state = ConnectionState::Sending(None);
+                (*conn_state).state = ConnectionState::Sending;
+                (*conn_state).waker = None;
             }
         }
 
@@ -298,20 +326,18 @@ impl Connection for SdpConnection {
         return ControlFlow::Continue(n_packets);
     }
 
+    /// Main sending process
     fn poll_send(&self, cx: &mut Context<'_>) -> Poll<Result<(), Box<dyn Error>>> {
         // set waker
         // waker will be killed in driver
-        let mut state = self.state.lock().unwrap();
-        match *state {
-            ConnectionState::Sending(None) => {
-                (*state) = ConnectionState::Sending(Some(
-                    cx.waker().clone()
-                ))
+        let mut conn_state = self.state.lock().unwrap();
+        match (*conn_state).state {
+            ConnectionState::Sending => {
+                (*conn_state).waker = Some(cx.waker().clone());
             },
             ConnectionState::Pending | ConnectionState::Receiving => {
                 return Poll::Ready(Err("`SdpConnection.poll_send` can't be called on state `ConnectionState::Pending`".into()))
             }
-            _ => {}
         }
 
         // does not need to be mutable
@@ -345,6 +371,8 @@ impl Connection for SdpConnection {
                             // if n_bytes_sent as u16 == first_packet.header.length {
                             //     first_packet.sync();
                             // }
+
+                            // TODO: change id of the first packet?
                         } // if wasn't sent, it will not be sync
                     } else if let Some(addr_ip) = addr.0.V4 {
                         // oh, it's not *dry*
@@ -668,7 +696,7 @@ impl Driver for SdpDriver {
                     );
                     // change state of the connection
                     // while handling `ACK` state should be `Sending` so we do not need to check or change it
-                    *alive_conn.1.state.lock().unwrap() = ConnectionState::Receiving;
+                    (*alive_conn.1.state.lock().unwrap()).state = ConnectionState::Receiving;
                     return ControlFlow::Continue(chat_sync.chat_id);
                 }
             },
@@ -744,7 +772,10 @@ impl Driver for SdpDriver {
                             self.handling.remove(&chat_sync.chat_id);
                             return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into()))
                         },
-                        Some(_) => {}
+                        Some(device_id) => {
+                            // construct the rest of the packets in transaction
+                            alive_conn.1.construct_rest(device_id);
+                        }
                     }
                 } else {
                     // drop transaction if it is started
@@ -925,8 +956,6 @@ impl Future for SdpDriver {
                         ControlFlow::Continue(chat_id) => {
                             // connection is already blocked
                             // send TODO: `ACK_SYN` here
-
-
                         },
                         ControlFlow::Break(Err(_)) => {
                             // for logging in the future
@@ -958,7 +987,7 @@ impl Future for SdpDriver {
                     } => {
                         for receiver in receivers {
                             let state = self.connections[&receiver].state.lock().unwrap();
-                            if let ConnectionState::Sending(_) = state.to_owned() {
+                            if ConnectionState::Sending == state.to_owned().state {
                                 continue;
                             }
                             match self.connections[&receiver].send(
@@ -1005,7 +1034,7 @@ impl Future for SdpDriver {
                         } => {
                             for receiver in receivers {
                                 let state = self.connections[&receiver].state.lock().unwrap();
-                                if let ConnectionState::Sending(_) = state.to_owned() {
+                                if ConnectionState::Sending == state.to_owned().state {
                                     continue;
                                 }
                                 match self.connections[&receiver].send(
@@ -1043,6 +1072,11 @@ impl Future for SdpDriver {
                     // "when there are no messages available, but channel is not yet closed"
                     continue;
                 }
+            }
+
+            // wake sending 
+            for (_, conn) in self.connections.iter() {
+                conn.try_wake_sending();
             }
         }
     }

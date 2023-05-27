@@ -8,7 +8,7 @@ use bitflags::bitflags;
 use serde::{Serialize, Deserialize};
 use bincode;
 
-mod sdp;
+pub mod sdp;
 
 bitflags! {
     /// Protocols enum

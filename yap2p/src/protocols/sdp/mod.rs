@@ -208,7 +208,7 @@ impl Transaction {
                             PacketSynchronizer::new(
                                 timestamp, n_packets, id
                             ),
-                            p
+                            p.to_vec()
                         )
                     ).collect();
 
@@ -224,11 +224,16 @@ impl Transaction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum ConnectionState {
     Receiving,
     Pending,
-    Sending(Option<Waker>)
+    Sending
+}
+#[derive(Debug, Clone)]
+struct ConnectionWaker {
+    state: ConnectionState,
+    waker: Option<Waker>
 }
 
 /// An abstraction for specific connection functions
@@ -303,8 +308,11 @@ impl PacketWindow {
 }
 
 #[derive(Debug, Clone)]
+/// Types of acknowledgement packets
 pub enum Acknowledgement {
+    /// 'ACK_SYN'
     First(PacketSynchronizer),
+    /// 'ACK'
     Rest(PacketWindow)
 }
 
@@ -323,6 +331,7 @@ pub enum MessageWrapper {
 
     /// Regular message to be sent
     Sending {
+        /// all posible receivers of the [`Message`]
         receivers: Vec<Peer>,
         /// Type of the chat
         chat_t: Chat,
