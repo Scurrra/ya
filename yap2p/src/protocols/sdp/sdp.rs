@@ -4,7 +4,10 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::collections::{HashMap, VecDeque};
 
-use tokio::net::UdpSocket;
+use tokio::{
+    net::UdpSocket,
+    io::ReadBuf
+};
 use futures::{
     channel::mpsc,
     ready
@@ -234,11 +237,14 @@ impl Connection for SdpConnection {
         chat_t: Chat,
         message: Message,
         chat_sync: ChatSynchronizer
-    ) -> ControlFlow<(), u64> {
+    ) -> ControlFlow<Result<(), Box<dyn Error>>, u64> {
         let mut state = self.state.lock().unwrap();
         match *state {
+            ConnectionState::Receiving => {
+                return ControlFlow::Break(Err("Connection is blocked for sending because of receiving".into()));
+            },
             ConnectionState::Sending(_) => {
-                return ControlFlow::Break(());
+                return ControlFlow::Break(Ok(()));
             },
             ConnectionState::Pending => {
                 // will be changed in `poll_send`
@@ -302,14 +308,14 @@ impl Connection for SdpConnection {
                     cx.waker().clone()
                 ))
             },
-            ConnectionState::Pending => {
+            ConnectionState::Pending | ConnectionState::Receiving => {
                 return Poll::Ready(Err("`SdpConnection.poll_send` can't be called on state `ConnectionState::Pending`".into()))
             }
             _ => {}
         }
 
         // does not need to be mutable
-        let send_queue = self.send_queue.lock().unwrap();   
+        let send_queue: std::sync::MutexGuard<HashMap<u16, Transaction>> = self.send_queue.lock().unwrap();   
         let mut devices_to_be_killed = Vec::new();     
         // iterate throw the send_queue
         // [`Transaction::First`] is checked because it's a match
@@ -440,6 +446,8 @@ impl Connection for SdpConnection {
 /// 
 /// This struct is only for receiving. 
 pub struct SdpDriver {
+    /// Socket for the driver
+    pub socket: Arc<UdpSocket>,
     /// [`PeerId`] of current [`Peer`]
     pub peer_id: PeerId,
 
@@ -448,13 +456,13 @@ pub struct SdpDriver {
 
     /// Channel for sending [`Message`]s
     pub(crate) sending: mpsc::Receiver<MessageWrapper>,
+    pub(crate) sending_deque: VecDeque<MessageWrapper>,
 
     /// Channel for receiving [`Message`]s, including `INIT` and `HI`
     pub(crate) receiving: mpsc::Sender<MessageWrapper>,
 
     // maps of currently handled transmissions
     handling: HashMap<[u8; 32], MessageHandler>, // for `SYN`
-    acknowledging: HashMap<[u8; 32], Vec<u64>> // for `ACK`
 }
 
 impl SdpDriver {
@@ -466,6 +474,7 @@ impl SdpDriver {
     /// * `socket` --- [`UdpSocket`], used for the driver and inside connections
     /// * `contacts` --- list of [`Contact`]s, tied with the driver
     pub fn new(
+        channel_capacity: usize,
         peer_id: &PeerId,
         socket: UdpSocket,
         contacts: Vec<Contact>
@@ -482,16 +491,17 @@ impl SdpDriver {
             );
         }
 
-        let (sending_tx, sending_rx) = mpsc::channel(CHANNEL_CAPACITY);
-        let (receiving_tx, receiving_rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let (sending_tx, sending_rx) = mpsc::channel(channel_capacity);
+        let (receiving_tx, receiving_rx) = mpsc::channel(channel_capacity);
 
         let driver = SdpDriver {
+            socket: socket, // I'm not sure about `Arc`
             peer_id: peer_id.clone(),
             connections,
             sending: sending_rx,
+            sending_deque: VecDeque::new(),
             receiving: receiving_tx,
-            handling: HashMap::new(),
-            acknowledging: HashMap::new()
+            handling: HashMap::new()
         };
 
         (driver, sending_tx, receiving_rx)
@@ -618,7 +628,7 @@ impl Driver for SdpDriver {
                 // chat for the message
                 let chat_sync = ChatSynchronizer::deserialize(packet[36..76].to_vec());
                 // check if connection is alive
-                if let Some(alive_conn) = self.connections.iter()
+                let alive_conn = if let Some(alive_conn) = self.connections.iter()
                     .find(
                         |conn| conn.contact.peer.id == header.src_id
                 ){
@@ -628,7 +638,9 @@ impl Driver for SdpDriver {
                             self.handling.remove(&chat_sync.chat_id);
                             return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into()))
                         },
-                        Some(_) => {}
+                        Some(_) => {
+                            alive_conn
+                        }
                     }
                 } else {
                     // drop transaction if it is started
@@ -651,9 +663,12 @@ impl Driver for SdpDriver {
                             chat_t: chat_t, 
                             timestamp_l: chat_sync.timestamp, 
                             first_packet_sync: packet_sync, 
-                            data: Vec::from([(packet_sync.packet_id, packet[100..].to_vec())]) 
-                        } 
+                            data: Vec::from([(packet_sync.packet_id, packet[100..].to_vec())])                        } 
                     );
+                    // change state of the connection
+                    // while handling `ACK` state should be `Sending` so we do not need to check or change it
+                    *alive_conn.state.lock().unwrap() = ConnectionState::Receiving;
+                    return ControlFlow::Continue(chat_sync.chat_id);
                 }
             },
             PacketType::ACK_INIT => { // like `INIT`, but another flag
@@ -738,12 +753,15 @@ impl Driver for SdpDriver {
                 
                 // getting packet synchronizer from 
                 let packet_sync = PacketSynchronizer::deserialize(packet[76..100].to_vec());
-                // first message in the transaction
-                if let Some(_) = self.acknowledging.insert(
-                        chat_sync.chat_id,
-                        Vec::from([packet_sync.packet_id])
-                ){
-                    return ControlFlow::Break(Err("Try to receive `ACK_SYN` once again".into()));
+                // finally sending first handled acknowledgement to channel
+                if let Err(e) = self.receiving.try_send(
+                    MessageWrapper::Acknowledgement { 
+                        chat_t: chat_t,
+                        chat_sync: chat_sync, 
+                        packets: Acknowledgement::First(packet_sync) 
+                }) {
+                    // attempt to handle channel error
+                    return ControlFlow::Break(Err(e.into()));
                 }
             },
             PacketType::ACK => {
@@ -769,13 +787,20 @@ impl Driver for SdpDriver {
                 };
                 
                 // getting packet synchronizer from 
-                let packet_sync = PacketSynchronizer::deserialize(packet[76..100].to_vec());
-                // add packet to the handling list
-                if self.handling.contains_key(&chat_sync.chat_id) {
-                    // I hope it will work
-                    if let Some(data) = self.acknowledging.get_mut(&chat_sync.chat_id) {
-                        data.push(packet_sync.packet_id);
+                let packets_sync = match PacketWindow::deserialize(packet[76..].to_vec()) {
+                    Ok(packets_sync) => packets_sync,
+                    Err(e) => {
+                        return ControlFlow::Break(Err(e));
                     }
+                };
+                if let Err(e) = self.receiving.try_send(
+                    MessageWrapper::Acknowledgement { 
+                        chat_t: chat_t,
+                        chat_sync: chat_sync, 
+                        packets: Acknowledgement::Rest(packets_sync) 
+                }) {
+                    // attempt to handle channel error
+                    return ControlFlow::Break(Err(e.into()));
                 }
             },
             _ => {
@@ -831,7 +856,7 @@ impl Driver for SdpDriver {
                 .concat();
             
             if let Err(e) = self.receiving.try_send(
-                MessageWrapper::Regular { 
+                MessageWrapper::Receiving { 
                     chat_t: handler.chat_t, 
                     chat_sync: ChatSynchronizer { 
                         chat_id: chat_id.to_owned(), 
@@ -853,9 +878,73 @@ impl Driver for SdpDriver {
 impl Future for SdpDriver {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        // Oreder:
+        // 1. handle message
+        // 2. handle incoming packets
+        // 3. send packets; while sending block handling on the connection
+        //      ! there is no machanism for handling packets from the specified address, block all of them
+        // 4. previous steps are needed because of SSDP (another module)
+        // 
+        // 
+        // 
         loop {
+            // handle message
+            // I hate this copies
+            let handling_chats = self.handling.clone();
+            for (chat_id, handling) in handling_chats.iter() {
+                if handling.data.len() == handling.first_packet_sync.n_packets as usize {
+                    // TODO: last `ACK` packet
 
+                    // now we can handle message
+                    match self.handle_message(chat_id) {
+                        ControlFlow::Continue(()) => {
+                            // never
+                        },
+                        ControlFlow::Break(Err(_)) => {
+                            // for logging in the future
+                        },
+                        ControlFlow::Break(Ok(())) => { 
+                            // all okay here
+                        }
+                    }
+                }
+
+                // TODO: `ACK` packet 
+            }
+            
+            // handling incoming packet 
+            let mut buf_array = [0u8; RECEIVE_BUFFER_SIZE];
+            let mut readbuf = ReadBuf::new(&mut buf_array);
+            match self.socket.poll_recv_from(cx, &mut readbuf) {
+                Poll::Ready(Ok(src_socket)) => {
+                    let packet = readbuf.filled().to_vec();
+                    // here used reference to packet to not to lose ownership
+                    match self.handle_dataram(&packet, src_socket) {
+                        ControlFlow::Continue(chat_id) => {
+                            // connection is already blocked
+                            // send TODO: `ACK_SYN` here
+
+
+                        },
+                        ControlFlow::Break(Err(_)) => {
+                            // for logging in the future
+                        },
+                        ControlFlow::Break(Ok(_)) => { 
+                            // all okay here
+                        }
+                    }
+                },
+                Poll::Ready(Err(_)) => {
+                    continue;
+                },
+                Poll::Pending => {}
+            }
+
+            // send packets from the channel
+            // we can't send top packet from the channel, if needed connections are blocked for sending
+            // so sending_deque is used and it must be checked first
+            
         }
     }
 }

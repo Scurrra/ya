@@ -21,7 +21,8 @@ use super::*;
 use crate::crypto::history::*;
 use crate::peer::*;
 
-const CHANNEL_CAPACITY: usize = 13;
+const RECEIVE_BUFFER_SIZE: usize = 1220;
+const WINDOW_SIZE: usize = 20;
 
 enum SentStatus {
     Awaiting,
@@ -35,7 +36,6 @@ pub struct Packet {
     header: Header,
     chat_sync: ChatSynchronizer,
     packet_sync: PacketSynchronizer,
-
     payload: Vec<u8>
 }
 
@@ -222,6 +222,7 @@ impl Transaction {
 }
 
 enum ConnectionState {
+    Receiving,
     Pending,
     Sending(Option<Waker>)
 }
@@ -254,7 +255,7 @@ pub trait Connection {
         chat_t: Chat,
         message: Message,
         chat_sync: ChatSynchronizer
-    ) -> ControlFlow<(), u64>;
+    ) -> ControlFlow<Result<(), Box<dyn Error>>, u64>;
 
     /// Exact function that sends [`Transaction`]s
     fn poll_send(&self, cx: &mut Context<'_>) -> Poll<Result<(), Box<dyn Error>>>;
@@ -262,6 +263,7 @@ pub trait Connection {
 
 /// Wrapper for a list of payloads of received [`Packet`]s
 // May be the struct name is not the best
+#[derive(Debug, Clone)]
 pub struct MessageHandler {
     /// Type of the chat [`Packet`]/[`Message`] belongs to
     chat_t: Chat,
@@ -273,7 +275,86 @@ pub struct MessageHandler {
     first_packet_sync: PacketSynchronizer,
 
     /// Payloads of all received [`Packet`]s alongside their ids
-    data: Vec<(u64, Vec<u8>)>
+    data: Vec<(u64, Vec<u8>)>,
+}
+
+/// Payload of `ACK` packets
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PacketWindow {
+    pub(crate) packet_ids: Vec<u64>
+}
+
+impl PacketWindow {
+    pub(crate) fn serialize(&self) -> Vec<u8> {
+        bincode::serialize(&self).unwrap()
+    }
+
+    #[track_caller]
+    pub(crate) fn deserialize(bytes: Vec<u8>) -> Result<PacketWindow, Box<dyn Error>> {
+        match bincode::deserialize(&bytes) {
+            Ok(chat_sync) => Ok(chat_sync),
+            Err(_) => Err("Wrong size of `PacketWindow`".into())
+        }
+    }
+}
+
+pub enum Acknowledgement {
+    First(PacketSynchronizer),
+    Rest(PacketWindow)
+}
+
+/// Wrapper for a standard message 
+pub enum MessageWrapper {
+    /// Regular message from `SYN` packet
+    Receiving {
+        /// Type of the chat
+        chat_t: Chat,
+        /// Synchronizer of the history
+        chat_sync: ChatSynchronizer,
+        /// Transmitted [`Message`]
+        payload: Vec<u8>
+    },
+
+    /// Regular message to be sent
+    Sending {
+        receivers: Vec<Peer>,
+        /// Type of the chat
+        chat_t: Chat,
+        /// Synchronizer of the history
+        chat_sync: ChatSynchronizer,
+        /// Transmitted [`Message`]
+        message: Message,
+    },
+
+    /// Regular message from `SYN` packet
+    Acknowledgement {
+        /// Type of the chat
+        chat_t: Chat,
+        /// Synchronizer of the history
+        chat_sync: ChatSynchronizer,
+        /// Transmitted [`Message`]
+        packets: Acknowledgement
+    },
+
+    /// `HI` packet
+    Recover {
+        /// Is it an ackhowledgement packet 
+        ack: bool,
+        /// Packet sender
+        peer: Peer,
+        /// List of [`History`]s sender wants to synchronize
+        histories: Vec<ChatSynchronizer>
+    },
+
+    /// `INIT` packet
+    Initial {
+        /// Is it an ackhowledgement packet 
+        ack: bool,
+        /// Packet sender
+        peer: Peer,
+        /// [`History`] to be initialised
+        history: ChatSynchronizer
+    }
 }
 
 /// An abstraction for specific driver functions
