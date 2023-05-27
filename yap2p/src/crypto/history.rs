@@ -13,6 +13,7 @@ use super::keychain::KeyChain;
 use crate::{peer::*, protocols::PacketType};
 
 /// Chat type
+#[derive(Debug, Clone, Copy)]
 pub enum Chat {
     /// Simple conversation of two [`Peer`]s.
     OneToOne,
@@ -169,8 +170,8 @@ pub struct History {
     // I'm not actually sure that we really need [`Mutex`] here
     pub messages: Mutex<Vec<Message>>,
 
-    /// Members of [`Chat::Group`] | [`Chat::Channel`]
-    known_members: Mutex<Option<Vec<Peer>>>
+    /// Members of [`Chat::OneToOne`] | [`Chat::Group`] | [`Chat::Channel`]
+    other_members: Mutex<Vec<Peer>>
 }
 
 impl History {
@@ -194,7 +195,7 @@ impl History {
         soft_ttl: u64,
         hard_ttl: u64,
         is_encrypted: bool,
-        known_members: Option<Vec<Peer>>
+        other_members: Vec<Peer>
     ) -> History {
         History {
             chat_t: chat_t,
@@ -206,7 +207,7 @@ impl History {
             soft_ttl,
             hard_ttl,
             messages: Mutex::new(Vec::new()),
-            known_members: Mutex::new(known_members)
+            other_members: Mutex::new(other_members)
         }
     }
 
@@ -310,9 +311,9 @@ impl History {
         }
     }
 
-    /// Get chat members if possible or None
-    pub fn members(&self) -> Option<Vec<Peer>> {
-        self.known_members.lock().unwrap().to_owned()
+    /// Get other chat members
+    pub fn members(&self) -> Vec<Peer> {
+        self.other_members.lock().unwrap().to_owned()
     }
 }
 
