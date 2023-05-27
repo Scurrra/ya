@@ -261,7 +261,7 @@ impl Connection for SdpConnection {
         };
 
         // [`Message.data`] into `payload`
-        let payload = message.data.as_ref().clone().as_ref().to_owned();
+        let payload = message.data;
         // and than split this payload
         let mut payloads = chunk_data_for_packet_split(payload, 1120);
         let first_payload = payloads.pop_front().unwrap();
@@ -452,7 +452,7 @@ pub struct SdpDriver {
     pub peer_id: PeerId,
 
     /// List of connections driver is responsible for
-    pub connections: Vec<SdpConnection>,
+    pub connections: HashMap<Peer, SdpConnection>,
 
     /// Channel for sending [`Message`]s
     pub(crate) sending: mpsc::Receiver<MessageWrapper>,
@@ -481,9 +481,10 @@ impl SdpDriver {
     ) -> (SdpDriver, mpsc::Sender<MessageWrapper>, mpsc::Receiver<MessageWrapper>) {
         let socket = Arc::new(socket);
 
-        let mut connections = Vec::with_capacity(contacts.len());
+        let mut connections = HashMap::with_capacity(contacts.len());
         for contact in contacts {
-            connections.push(
+            connections.insert(
+                contact.peer.clone(),
                 SdpConnection::new( 
                     socket.clone(), 
                     contact
@@ -572,11 +573,11 @@ impl Driver for SdpDriver {
                 // message sender
                 let src_peer = if let Some(alive_conn) = self.connections.iter()
                     .find(
-                |   conn| conn.contact.peer.id == header.src_id
+                |   conn| conn.0.id == header.src_id
                 ){
-                    match alive_conn.check_addr(packet_src) {
+                    match alive_conn.1.check_addr(packet_src) {
                         None => return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into())),
-                        Some(_) => alive_conn.contact.peer.clone()
+                        Some(_) => alive_conn.0.clone()
                     }
                 } else {
                     return ControlFlow::Break(Err("No connections to the source peer".into()));
@@ -604,11 +605,11 @@ impl Driver for SdpDriver {
                 // message sender
                 let src_peer = if let Some(alive_conn) = self.connections.iter()
                     .find(
-                |   conn| conn.contact.peer.id == header.src_id
+                |   conn| conn.0.id == header.src_id
                 ){
-                    match alive_conn.check_addr(packet_src) {
+                    match alive_conn.1.check_addr(packet_src) {
                         None => return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into())),
-                        Some(_) => alive_conn.contact.peer.clone()
+                        Some(_) => alive_conn.0.clone()
                     }
                 } else {
                     return ControlFlow::Break(Err("No connections to the source peer".into()));
@@ -630,9 +631,9 @@ impl Driver for SdpDriver {
                 // check if connection is alive
                 let alive_conn = if let Some(alive_conn) = self.connections.iter()
                     .find(
-                        |conn| conn.contact.peer.id == header.src_id
+                        |conn| conn.0.id == header.src_id
                 ){
-                    match alive_conn.check_addr(packet_src) {
+                    match alive_conn.1.check_addr(packet_src) {
                         None => {
                             // drop transaction if it is started
                             self.handling.remove(&chat_sync.chat_id);
@@ -667,7 +668,7 @@ impl Driver for SdpDriver {
                     );
                     // change state of the connection
                     // while handling `ACK` state should be `Sending` so we do not need to check or change it
-                    *alive_conn.state.lock().unwrap() = ConnectionState::Receiving;
+                    *alive_conn.1.state.lock().unwrap() = ConnectionState::Receiving;
                     return ControlFlow::Continue(chat_sync.chat_id);
                 }
             },
@@ -677,11 +678,11 @@ impl Driver for SdpDriver {
                 // message sender
                 let src_peer = if let Some(alive_conn) = self.connections.iter()
                     .find(
-                |   conn| conn.contact.peer.id == header.src_id
+                |   conn| conn.0.id == header.src_id
                 ){
-                    match alive_conn.check_addr(packet_src) {
+                    match alive_conn.1.check_addr(packet_src) {
                         None => return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into())),
-                        Some(_) => alive_conn.contact.peer.clone()
+                        Some(_) => alive_conn.0.clone()
                     }
                 } else {
                     return ControlFlow::Break(Err("No connections to the source peer".into()));
@@ -709,11 +710,11 @@ impl Driver for SdpDriver {
                 // message sender
                 let src_peer = if let Some(alive_conn) = self.connections.iter()
                     .find(
-                |   conn| conn.contact.peer.id == header.src_id
+                |   conn| conn.0.id == header.src_id
                 ){
-                    match alive_conn.check_addr(packet_src) {
+                    match alive_conn.1.check_addr(packet_src) {
                         None => return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into())),
-                        Some(_) => alive_conn.contact.peer.clone()
+                        Some(_) => alive_conn.0.clone()
                     }
                 } else {
                     return ControlFlow::Break(Err("No connections to the source peer".into()));
@@ -735,9 +736,9 @@ impl Driver for SdpDriver {
                 // check if connection is alive
                 if let Some(alive_conn) = self.connections.iter()
                     .find(
-                        |conn| conn.contact.peer.id == header.src_id
+                        |conn| conn.0.id == header.src_id
                 ){
-                    match alive_conn.check_addr(packet_src) {
+                    match alive_conn.1.check_addr(packet_src) {
                         None => {
                             // drop transaction if it is started
                             self.handling.remove(&chat_sync.chat_id);
@@ -770,9 +771,9 @@ impl Driver for SdpDriver {
                 // check if connection is alive
                 if let Some(alive_conn) = self.connections.iter()
                     .find(
-                        |conn| conn.contact.peer.id == header.src_id
+                        |conn| conn.0.id == header.src_id
                 ){
-                    match alive_conn.check_addr(packet_src) {
+                    match alive_conn.1.check_addr(packet_src) {
                         None => {
                             // drop transaction if it is started
                             self.handling.remove(&chat_sync.chat_id);
@@ -944,7 +945,105 @@ impl Future for SdpDriver {
             // send packets from the channel
             // we can't send top packet from the channel, if needed connections are blocked for sending
             // so sending_deque is used and it must be checked first
-            
+            let mut sent_from_deque = Vec::new();
+            for i in 0..self.sending_deque.len() {
+                // send message to all ready peers
+                let mut is_sent = false;
+                match self.sending_deque[i].clone() {
+                    MessageWrapper::Sending { 
+                        receivers, 
+                        chat_t, 
+                        chat_sync, 
+                        message 
+                    } => {
+                        for receiver in receivers {
+                            let state = self.connections[&receiver].state.lock().unwrap();
+                            if let ConnectionState::Sending(_) = state.to_owned() {
+                                continue;
+                            }
+                            match self.connections[&receiver].send(
+                                chat_t, 
+                                message.clone(), 
+                                chat_sync
+                            ) {
+                                ControlFlow::Break(Ok(())) => {    
+                                    // another message is currently sending
+                                    // dead code
+                                },
+                                ControlFlow::Break(Err(e)) => {
+                                    // blocked for sending
+                                    // dead code
+                                },
+                                ControlFlow::Continue(n_packets) => {
+                                    is_sent = true;
+                                },
+                            }
+                        }
+                    }, 
+                    // handle 'HI', 'INIT', and ignore other types
+                    _ => {}
+                }
+                if is_sent {
+                    sent_from_deque.push(i);
+                }
+            }
+            for sent in sent_from_deque {
+                self.sending_deque.remove(sent);
+            }
+
+            // now try read one message from sending channel
+            match self.sending.try_next() {
+                Ok(Some(message)) => {
+                    // send message to all ready peers
+                    let mut is_sent = false;
+                    match message.clone() {
+                        MessageWrapper::Sending { 
+                            receivers, 
+                            chat_t, 
+                            chat_sync, 
+                            message 
+                        } => {
+                            for receiver in receivers {
+                                let state = self.connections[&receiver].state.lock().unwrap();
+                                if let ConnectionState::Sending(_) = state.to_owned() {
+                                    continue;
+                                }
+                                match self.connections[&receiver].send(
+                                    chat_t, 
+                                    message.clone(), 
+                                    chat_sync
+                                ) {
+                                    ControlFlow::Break(Ok(())) => {
+                                        // another message is currently sending
+                                        // dead code
+                                    },
+                                    ControlFlow::Break(Err(e)) => {
+                                        // blocked for sending
+                                        // dead code
+                                    },
+                                    ControlFlow::Continue(n_packets) => {
+                                        is_sent = true;
+                                    },
+                                }
+                            }
+                        }, 
+                        // handle 'HI', 'INIT', and ignore other types
+                        _ => {}
+                    }
+                    if is_sent {
+                        self.sending_deque.push_back(message);
+                    }
+                },
+                Ok(None) => {
+                    // "when channel is closed and no messages left in the queue"
+                    // so driver is dead and we can drop it?
+                    return Poll::Ready(());
+                },
+                Err(e) => {
+                    // "when there are no messages available, but channel is not yet closed"
+                    continue;
+                }
+            }
         }
     }
 }

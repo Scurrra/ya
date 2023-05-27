@@ -24,6 +24,7 @@ use crate::peer::*;
 const RECEIVE_BUFFER_SIZE: usize = 1220;
 const WINDOW_SIZE: usize = 20;
 
+#[derive(Debug, Clone)]
 enum SentStatus {
     Awaiting,
     Synchronizing
@@ -31,6 +32,7 @@ enum SentStatus {
 
 /// Struct that ties [`Header`] and it's payload. The main purpose is checking if 
 /// data piece is received
+#[derive(Debug)]
 pub struct Packet {
     status: Mutex<SentStatus>,
     header: Header,
@@ -139,6 +141,7 @@ impl PacketSynchronizer {
 }
 
 /// Enum for representing current state of transaction
+#[derive(Debug)]
 pub enum Transaction {
     /// First packet in transaction and the rest of the data. Needed because first packet 
     /// should be acknowledged before sending others
@@ -221,6 +224,7 @@ impl Transaction {
     }
 }
 
+#[derive(Debug, Clone)]
 enum ConnectionState {
     Receiving,
     Pending,
@@ -298,12 +302,14 @@ impl PacketWindow {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum Acknowledgement {
     First(PacketSynchronizer),
     Rest(PacketWindow)
 }
 
 /// Wrapper for a standard message 
+#[derive(Debug, Clone)]
 pub enum MessageWrapper {
     /// Regular message from `SYN` packet
     Receiving {
