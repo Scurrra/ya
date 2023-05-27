@@ -170,7 +170,7 @@ pub struct History {
     pub messages: Mutex<Vec<Message>>,
 
     /// Members of [`Chat::Group`] | [`Chat::Channel`]
-    pub known_members: Option<Vec<Peer>>
+    known_members: Mutex<Option<Vec<Peer>>>
 }
 
 impl History {
@@ -206,7 +206,7 @@ impl History {
             soft_ttl,
             hard_ttl,
             messages: Mutex::new(Vec::new()),
-            known_members: known_members
+            known_members: Mutex::new(known_members)
         }
     }
 
@@ -306,8 +306,13 @@ impl History {
     pub fn synchronizer(&self) -> ChatSynchronizer {
         ChatSynchronizer { 
             chat_id: self.chat_id, 
-            timestamp: *self.top_timestamp.lock().unwrap()
+            timestamp: self.top_timestamp.lock().unwrap().to_owned()
         }
+    }
+
+    /// Get chat members if possible or None
+    pub fn members(&self) -> Option<Vec<Peer>> {
+        self.known_members.lock().unwrap().to_owned()
     }
 }
 
