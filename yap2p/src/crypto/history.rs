@@ -168,6 +168,9 @@ pub struct History {
     /// Stored [`Message`]s
     // I'm not actually sure that we really need [`Mutex`] here
     pub messages: Mutex<Vec<Message>>,
+
+    /// Members of [`Chat::Group`] | [`Chat::Channel`]
+    pub known_members: Option<Vec<Peer>>
 }
 
 impl History {
@@ -191,6 +194,7 @@ impl History {
         soft_ttl: u64,
         hard_ttl: u64,
         is_encrypted: bool,
+        known_members: Option<Vec<Peer>>
     ) -> History {
         History {
             chat_t: chat_t,
@@ -202,6 +206,7 @@ impl History {
             soft_ttl,
             hard_ttl,
             messages: Mutex::new(Vec::new()),
+            known_members: known_members
         }
     }
 
@@ -358,39 +363,6 @@ impl ChatSynchronizer {
             Ok(chat_sync) => chat_sync,
             Err(_) => panic!("Wrong size of `ChatSynchronizer`"),
         }
-    }
-}
-
-/// Wrapper for a standard message 
-pub enum MessageWrapper {
-    /// Regular message from `SYN` packet
-    Regular {
-        /// Type of the chat
-        chat_t: Chat,
-        /// Synchronizer of the history
-        chat_sync: ChatSynchronizer,
-        /// Transmitted [`Message`]
-        payload: Vec<u8>
-    },
-
-    /// `HI` packet
-    Recover {
-        /// Is it an ackhowledgement packet 
-        ack: bool,
-        /// Packet sender
-        peer: Peer,
-        /// List of [`History`]s sender wants to synchronize
-        histories: Vec<ChatSynchronizer>
-    },
-
-    /// `INIT` packet
-    Initial {
-        /// Is it an ackhowledgement packet 
-        ack: bool,
-        /// Packet sender
-        peer: Peer,
-        /// [`History`] to be initialised
-        history: ChatSynchronizer
     }
 }
 
