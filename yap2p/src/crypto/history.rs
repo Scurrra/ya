@@ -27,6 +27,7 @@ pub enum Chat {
 }
 
 /// Struct for storing a piece of data to be transmitted.
+#[derive(Debug, Clone)]
 pub struct Message {
     /// Message sender
     /// Just one heavy (16 bytes for [`PeerId`] + N bytes for name) way to know, who sent this
@@ -43,7 +44,7 @@ pub struct Message {
     pub is_encrypted: bool,
 
     /// Message data
-    pub data: Box<dyn AsRef<[u8]>>, // should work for whatever implements AsRef<u8>
+    pub data: Vec<u8>
 }
 
 impl Message {
@@ -65,7 +66,7 @@ impl Message {
             timestamp: SystemTime::now().elapsed().unwrap().as_secs(),
             key: key,
             is_encrypted: false,
-            data: Box::new(data.as_ref().to_owned()),
+            data: data.as_ref().to_owned(),
         }
     }
 
@@ -87,7 +88,7 @@ impl Message {
             timestamp: SystemTime::now().elapsed().unwrap().as_secs(),
             key: key,
             is_encrypted: true,
-            data: Box::new(data.as_ref().to_owned()),
+            data: data.as_ref().to_owned(),
         }
     }
 
@@ -111,7 +112,7 @@ impl Message {
             timestamp: timestamp,
             key: key,
             is_encrypted: false,
-            data: Box::new(data.as_ref().to_owned()),
+            data: data.as_ref().to_owned(),
         }
     }
 
@@ -135,7 +136,7 @@ impl Message {
             timestamp: timestamp,
             key: key,
             is_encrypted: true,
-            data: Box::new(data.as_ref().to_owned()),
+            data: data.as_ref().to_owned(),
         }
     }
 }
