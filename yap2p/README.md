@@ -29,7 +29,7 @@ This library proposes a new P2P network topology that enables users to connect m
       - [ ] Packets acknowledgement
    - [ ] Secure Symmetric Datagram Protocol
 - [ ] Network
-   - [ ] Description
+   - [x] Description
    - [ ] SelfNet
    - [ ] MeshNet
    - [ ] ContactNet 
