@@ -7,7 +7,13 @@ This repository contains some yet another applicatios - reinvented technologies 
 [![Crates.io][yap2p-crates-badge]][yap2p-crates-url]
 [![MIT licensed][mit-badge]][mit-url]
 
-Library that proposes a new P2P network topology that allows it's users to have many devices. This topology also gives an opportunity to implement distributed applications over it.
+> **Note**
+> Library is under development right now
+
+> **Warning**
+> Library needs testing 
+
+This library proposes a new P2P network topology that enables users to connect multiple devices to one peer. The topology provides an opportunity to implement distributed applications over it.
 
 [yap2p-github]: https://github.com/Scurrra/ya/tree/master/yap2p
 [yap2p-crates-badge]: https://img.shields.io/crates/v/yap2p.svg

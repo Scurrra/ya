@@ -6,7 +6,7 @@
 > **Warning**
 > Library needs testing 
 
-Library that proposes a new P2P network topology that allows it's users to have many devices. This topology also gives an opportunity to implement distributed applications over it.
+This library proposes a new P2P network topology that enables users to connect multiple devices to one peer. The topology provides an opportunity to implement distributed applications over it.
 
 [![Crates.io][crates-badge]][crates-url]
 [![MIT licensed][mit-badge]][mit-url]
