@@ -1,5 +1,11 @@
 # Yet Another Peer-to-Peer Network
 
+> **Note**
+> Library is under development right now
+
+> **Warning**
+> Library needs testing 
+
 Library that proposes a new P2P network topology that allows it's users to have many devices. This topology also gives an opportunity to implement distributed applications over it.
 
 [![Crates.io][crates-badge]][crates-url]
