@@ -239,7 +239,7 @@ impl SdpConnection {
         let mut packet = match chat_t {
             Chat::OneToOne => Header::new(
                 ProtocolType::SDP,
-                PacketType::CHAT | PacketType::ACK,
+                PacketType::CHAT | PacketType::ACK_SYN,
                 length,
                 sender,
                 receiver,
@@ -247,7 +247,7 @@ impl SdpConnection {
             .serialize(),
             Chat::Group => Header::new(
                 ProtocolType::SDP,
-                PacketType::CONV | PacketType::ACK,
+                PacketType::CONV | PacketType::ACK_SYN,
                 length,
                 sender,
                 receiver,
@@ -255,7 +255,7 @@ impl SdpConnection {
             .serialize(),
             Chat::Channel => Header::new(
                 ProtocolType::SDP,
-                PacketType::CHAN | PacketType::ACK,
+                PacketType::CHAN | PacketType::ACK_SYN,
                 length,
                 sender,
                 receiver,
@@ -1115,11 +1115,26 @@ impl Future for SdpDriver {
             match self.socket.poll_recv_from(cx, &mut readbuf) {
                 Poll::Ready(Ok(src_socket)) => {
                     let packet = readbuf.filled().to_vec();
-                    // here used reference to packet to not to lose ownership
+                    // here used reference to packet to not lose ownership
                     match self.handle_dataram(&packet, src_socket) {
                         ControlFlow::Continue(chat_id) => {
                             // connection is already blocked
-                            // send TODO: `ACK_SYN` here
+                            // send `ACK_SYN`
+                            if let Some(handling_chat) = self.handling.get_mut(&chat_id) {
+                                if let Ok(_) = ready!(SdpConnection::ack_first(
+                                    cx, 
+                                    &socket, 
+                                    handling_chat.chat_t, 
+                                    peer_id, 
+                                    handling_chat.peer_id, 
+                                    handling_chat.sender_src, 
+                                    handling_chat.first_packet_sync)
+                                ) {
+                                    // first packet acknowledged
+                                } else {
+                                    continue;
+                                }
+                            }
                         },
                         ControlFlow::Break(Err(_)) => {
                             // for logging in the future
