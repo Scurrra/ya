@@ -2,10 +2,10 @@
 
 ## TODO:
 - [ ] Protocols
-   - [ ] Symmetric Datagram Protocol
+   - [x] Symmetric Datagram Protocol
       - [x] Sending messages
-      - [X] Receiving Messages
-      - [ ] Packets acknowledgement
+      - [x] Receiving Messages
+      - [x] Packets acknowledgement
    - [ ] Secure Symmetric Datagram Protocol
 
 The main protocol used is (Secure) Symmetric Datagram Protocol. Currently only SDP is implemented.

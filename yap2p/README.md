@@ -23,10 +23,10 @@ This library proposes a new P2P network topology that enables users to connect m
    - [x] Messages and History
 - [x] Peers and Nodes
 - [ ] Protocols
-   - [ ] Symmetric Datagram Protocol
+   - [x] Symmetric Datagram Protocol
       - [x] Sending messages
-      - [X] Receiving Messages
-      - [ ] Packets acknowledgement
+      - [x] Receiving Messages
+      - [x] Packets acknowledgement
    - [ ] Secure Symmetric Datagram Protocol
 - [ ] Network
    - [x] Description
