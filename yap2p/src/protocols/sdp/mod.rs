@@ -176,7 +176,7 @@ impl Transaction {
         }
     }
 
-    fn construct_rest(self) -> Transaction {
+    fn construct_rest(self, packet_id: u64) -> Transaction {
         match self {
             Transaction::First { 
                 first_packet, 
@@ -193,7 +193,7 @@ impl Transaction {
                 let PacketSynchronizer{
                     timestamp,
                     n_packets,
-                    packet_id
+                    packet_id: _
                 } = first_packet.packet_sync;
                 let payload = rest_of_payload.into_iter()
                     .zip((packet_id+1)..(packet_id+n_packets))
@@ -219,6 +219,21 @@ impl Transaction {
             },
             Transaction::Rest{ .. } => {
                 self
+            }
+        }
+    }
+
+    fn ack_packets(&self, packet_ids: &Vec<u64>) {
+        match self {
+            Transaction::First { .. } => {  },
+            Transaction::Rest{
+                first_packet_id: _,
+                payload
+            } => {
+                let mut packets = payload.lock().unwrap();
+                (*packets).iter()
+                    .filter(|p| packet_ids.contains(&p.packet_sync.packet_id))
+                    .map(|p| p.sync());   
             }
         }
     }
@@ -342,6 +357,7 @@ pub enum MessageWrapper {
     },
 
     /// Regular message from `SYN` packet
+    // dead logic, but let it live for now
     Acknowledgement {
         /// Type of the chat
         chat_t: Chat,

@@ -197,13 +197,22 @@ impl SdpConnection {
 
     /// Construct the rest of the packets for `device_id`
     // We need this because of its Rust, you know
-    pub fn construct_rest(&self, device_id: u16) {
+    // but it should work
+    pub fn construct_rest(&self, device_id: u16, packet_id: u64) {
         let mut send_queue = self.send_queue.lock().unwrap();
         let transaction = send_queue.remove(&device_id).unwrap();
         (*send_queue).insert(
             device_id,
-            transaction.construct_rest()
+            transaction.construct_rest(packet_id)
         );
+    }
+
+    /// Acknowledge specified packets for `device_id`
+    // We need this because of its Rust, you know
+    // but it should work
+    pub fn ack_packets(&self, device_id: u16, packet_ids: &Vec<u64>) {
+        let send_queue = self.send_queue.lock().unwrap();
+        send_queue[&device_id].ack_packets(packet_ids);
     }
 
     /// Try to wake sending process. Works only if state is 'Sending', ignores otherwise.
@@ -773,8 +782,18 @@ impl Driver for SdpDriver {
                             return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into()))
                         },
                         Some(device_id) => {
+                            // getting packet synchronizer from 
+                            let PacketSynchronizer { 
+                                timestamp: _,
+                                n_packets: _, 
+                                packet_id 
+                            } = PacketSynchronizer::deserialize(packet[76..100].to_vec());
+                
                             // construct the rest of the packets in transaction
-                            alive_conn.1.construct_rest(device_id);
+                            // by constructing the rest of the transaction, the first packet is also acknowledged
+                            // (Transaction::First.first_packet.status is not needed)
+                            // construct_rest constracts packets from packet_sync.packet_id
+                            alive_conn.1.construct_rest(device_id, packet_id);
                         }
                     }
                 } else {
@@ -782,19 +801,6 @@ impl Driver for SdpDriver {
                     self.handling.remove(&chat_sync.chat_id);
                     return ControlFlow::Break(Err("No connections to the source peer".into()));
                 };
-                
-                // getting packet synchronizer from 
-                let packet_sync = PacketSynchronizer::deserialize(packet[76..100].to_vec());
-                // finally sending first handled acknowledgement to channel
-                if let Err(e) = self.receiving.try_send(
-                    MessageWrapper::Acknowledgement { 
-                        chat_t: chat_t,
-                        chat_sync: chat_sync, 
-                        packets: Acknowledgement::First(packet_sync) 
-                }) {
-                    // attempt to handle channel error
-                    return ControlFlow::Break(Err(e.into()));
-                }
             },
             PacketType::ACK => {
                 // chat for the message
@@ -810,30 +816,23 @@ impl Driver for SdpDriver {
                             self.handling.remove(&chat_sync.chat_id);
                             return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into()))
                         },
-                        Some(_) => {}
+                        Some(device_id) => {
+                            // getting packet synchronizers from 
+                            let PacketWindow { packet_ids } = match PacketWindow::deserialize(packet[76..].to_vec()) {
+                                Ok(packets_sync) => packets_sync,
+                                Err(e) => {
+                                    return ControlFlow::Break(Err(e));
+                                }
+                            };
+                            // and acknow it
+                            alive_conn.1.ack_packets(device_id, &packet_ids)
+                        }
                     }
                 } else {
                     // drop transaction if it is started
                     self.handling.remove(&chat_sync.chat_id);
                     return ControlFlow::Break(Err("No connections to the source peer".into()));
                 };
-                
-                // getting packet synchronizer from 
-                let packets_sync = match PacketWindow::deserialize(packet[76..].to_vec()) {
-                    Ok(packets_sync) => packets_sync,
-                    Err(e) => {
-                        return ControlFlow::Break(Err(e));
-                    }
-                };
-                if let Err(e) = self.receiving.try_send(
-                    MessageWrapper::Acknowledgement { 
-                        chat_t: chat_t,
-                        chat_sync: chat_sync, 
-                        packets: Acknowledgement::Rest(packets_sync) 
-                }) {
-                    // attempt to handle channel error
-                    return ControlFlow::Break(Err(e.into()));
-                }
             },
             _ => {
                 return ControlFlow::Break(Err("Unkhown packet type".into()));
