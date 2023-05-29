@@ -1,4 +1,4 @@
-# Yet Another Peer-to-Peer Network
+# Yet Another Peer-to-Peer Network (YAP2P)
 
 > **Note**
 > Library is under development right now
