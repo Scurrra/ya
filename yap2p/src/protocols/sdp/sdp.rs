@@ -96,7 +96,7 @@ impl SdpConnection {
         }
     }
 
-    /// Send "hi" packet to another [`Peer`]
+    /// Send `HI` packet to another [`Peer`]
     ///
     /// Arguments
     ///
@@ -213,6 +213,112 @@ impl SdpConnection {
     pub fn ack_packets(&self, device_id: u16, packet_ids: &Vec<u64>) {
         let send_queue = self.send_queue.lock().unwrap();
         send_queue[&device_id].ack_packets(packet_ids);
+    }
+
+    /// Send `ACK` packet for the first [`Packet`]
+    /// 
+    /// Arguments
+    /// 
+    /// * `socket` --- local UDP socket
+    /// * `chat_t` --- [`Chat`] type
+    /// * `sender` --- sender id
+    /// * `receiver` --- receiver id (id of `SYN` sender)
+    /// * `receiver_sock` --- receiver socket address
+    /// * `packet_sync` --- [`PacketSynchronizer`] of the first packet
+    fn ack_first(
+        cx: &mut Context<'_>,
+        socket: &UdpSocket,
+        chat_t: Chat,
+        sender: PeerId,
+        receiver: PeerId,
+        receiver_sock: SocketAddr,
+        packet_sync: PacketSynchronizer,
+    ) -> Poll<std::io::Result<usize>> {
+        let packet_sync = packet_sync.serialize();
+        let length: u16 = 36 + packet_sync.len() as u16;
+        let mut packet = match chat_t {
+            Chat::OneToOne => Header::new(
+                ProtocolType::SDP,
+                PacketType::CHAT | PacketType::ACK,
+                length,
+                sender,
+                receiver,
+            )
+            .serialize(),
+            Chat::Group => Header::new(
+                ProtocolType::SDP,
+                PacketType::CONV | PacketType::ACK,
+                length,
+                sender,
+                receiver,
+            )
+            .serialize(),
+            Chat::Channel => Header::new(
+                ProtocolType::SDP,
+                PacketType::CHAN | PacketType::ACK,
+                length,
+                sender,
+                receiver,
+            )
+            .serialize(),
+        };
+
+        packet.extend_from_slice(&packet_sync);
+
+        socket.poll_send_to(cx, &packet, receiver_sock)
+    }
+
+    /// Send `ACK` packet for the bunch of [`Packet`]s
+    /// 
+    /// Arguments
+    /// 
+    /// * `socket` --- local UDP socket
+    /// * `chat_t` --- [`Chat`] type
+    /// * `sender` --- sender id
+    /// * `receiver` --- receiver id (id of `SYN` sender)
+    /// * `receiver_sock` --- receiver socket address
+    /// * `packet_window` --- [`PacketWindow`] which contains ids of a bunch of packets
+    fn ack_window(
+        cx: &mut Context<'_>,
+        socket: &UdpSocket,
+        chat_t: Chat,
+        sender: PeerId,
+        receiver: PeerId,
+        receiver_sock: SocketAddr,
+        packet_window: &PacketWindow,
+    ) -> Poll<std::io::Result<usize>> {
+        let packet_window = packet_window.serialize();
+        let length: u16 = 36 + packet_window.len() as u16;
+        let mut packet = match chat_t {
+            Chat::OneToOne => Header::new(
+                ProtocolType::SDP,
+                PacketType::CHAT | PacketType::ACK,
+                length,
+                sender,
+                receiver,
+            )
+            .serialize(),
+            Chat::Group => Header::new(
+                ProtocolType::SDP,
+                PacketType::CONV | PacketType::ACK,
+                length,
+                sender,
+                receiver,
+            )
+            .serialize(),
+            Chat::Channel => Header::new(
+                ProtocolType::SDP,
+                PacketType::CHAN | PacketType::ACK,
+                length,
+                sender,
+                receiver,
+            )
+            .serialize(),
+        };
+
+        packet.extend_from_slice(&packet_window);
+
+        socket.poll_send_to(cx, &packet, receiver_sock)
     }
 
     /// Try to wake sending process. Works only if state is 'Sending', ignores otherwise.
@@ -500,6 +606,7 @@ pub struct SdpDriver {
 
     // maps of currently handled transmissions
     handling: HashMap<[u8; 32], MessageHandler>, // for `SYN`
+    handling_keys: HashSet<[u8; 32]> 
 }
 
 impl SdpDriver {
@@ -539,7 +646,8 @@ impl SdpDriver {
             sending: sending_rx,
             sending_deque: VecDeque::new(),
             receiving: receiving_tx,
-            handling: HashMap::new()
+            handling: HashMap::new(),
+            handling_keys: HashSet::new()
         };
 
         (driver, sending_tx, receiving_rx)
@@ -610,7 +718,7 @@ impl Driver for SdpDriver {
                 // message sender
                 let src_peer = if let Some(alive_conn) = self.connections.iter()
                     .find(
-                |   conn| conn.0.id == header.src_id
+                    |(peer, _)| peer.id == header.src_id
                 ){
                     match alive_conn.1.check_addr(packet_src) {
                         None => return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into())),
@@ -642,7 +750,7 @@ impl Driver for SdpDriver {
                 // message sender
                 let src_peer = if let Some(alive_conn) = self.connections.iter()
                     .find(
-                |   conn| conn.0.id == header.src_id
+                        |(peer, _)| peer.id == header.src_id
                 ){
                     match alive_conn.1.check_addr(packet_src) {
                         None => return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into())),
@@ -668,7 +776,7 @@ impl Driver for SdpDriver {
                 // check if connection is alive
                 let alive_conn = if let Some(alive_conn) = self.connections.iter()
                     .find(
-                        |conn| conn.0.id == header.src_id
+                        |(peer, _)| peer.id == header.src_id
                 ){
                     match alive_conn.1.check_addr(packet_src) {
                         None => {
@@ -683,6 +791,7 @@ impl Driver for SdpDriver {
                 } else {
                     // drop transaction if it is started
                     self.handling.remove(&chat_sync.chat_id);
+                    self.handling_keys.remove(&chat_sync.chat_id);
                     return ControlFlow::Break(Err("No connections to the source peer".into()));
                 };
                 
@@ -692,17 +801,29 @@ impl Driver for SdpDriver {
                 if self.handling.contains_key(&chat_sync.chat_id) {
                     // I hope it will work
                     if let Some(data) = self.handling.get_mut(&chat_sync.chat_id) {
-                        data.data.push((packet_sync.packet_id, packet[100..].to_vec()));
+                        // handling data only if it's not handling yet
+                        // so some checks in `handle_message` are not needed
+                        if !data.acknowledged.contains(&packet_sync.packet_id) &&
+                                !data.acknowledging.contains(&packet_sync.packet_id) {
+                            data.acknowledging.push(packet_sync.packet_id);
+                            data.data.push((packet_sync.packet_id, packet[100..].to_vec()));
+                        }
                     }
                 } else { // first message in the transaction
                     self.handling.insert(
                         chat_sync.chat_id,
                         MessageHandler { 
+                            peer_id: alive_conn.0.id,
+                            sender_src: packet_src,
                             chat_t: chat_t, 
                             timestamp_l: chat_sync.timestamp, 
                             first_packet_sync: packet_sync, 
-                            data: Vec::from([(packet_sync.packet_id, packet[100..].to_vec())])                        } 
+                            data: Vec::from([(packet_sync.packet_id, packet[100..].to_vec())]),
+                            acknowledging: Vec::with_capacity(WINDOW_SIZE), // frankly speaking, it's not a "window"  
+                            acknowledged: HashSet::new()             
+                        } 
                     );
+                    self.handling_keys.insert(chat_sync.chat_id);
                     // change state of the connection
                     // while handling `ACK` state should be `Sending` so we do not need to check or change it
                     (*alive_conn.1.state.lock().unwrap()).state = ConnectionState::Receiving;
@@ -869,16 +990,17 @@ impl Driver for SdpDriver {
             );
 
             // wrong quantity of packets, but deduped
-            let mut ids = handler.data.iter()
-                .map(|(id, _)| id.to_owned())
-                .collect::<Vec<u64>>();
-            ids.dedup();
-            if ids.len() != handler.first_packet_sync.n_packets as usize {
-                return ControlFlow::Break(Err("Wrong number of packets".into()));
-            }
-            if ids.last().unwrap() - ids.first().unwrap() + 1 != handler.first_packet_sync.n_packets {
-                return ControlFlow::Break(Err("Wrong packets order".into()));
-            }
+            // dedup isn't needed because of `acknowledging` field
+            // let mut ids = handler.data.iter()
+            //     .map(|(id, _)| id.to_owned())
+            //     .collect::<Vec<u64>>();
+            // ids.dedup();
+            // if ids.len() != handler.first_packet_sync.n_packets as usize {
+            //     return ControlFlow::Break(Err("Wrong number of packets".into()));
+            // }
+            // if ids.last().unwrap() - ids.first().unwrap() + 1 != handler.first_packet_sync.n_packets {
+            //     return ControlFlow::Break(Err("Wrong packets order".into()));
+            // }
             
             // collect payload
             let payload = handler.data.iter()
@@ -910,6 +1032,8 @@ impl Future for SdpDriver {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let socket = self.socket.clone();
+        let peer_id = self.peer_id.clone();
         // Oreder:
         // 1. handle message
         // 2. handle incoming packets
@@ -922,13 +1046,35 @@ impl Future for SdpDriver {
         loop {
             // handle message
             // I hate this copies
-            let handling_chats = self.handling.clone();
-            for (chat_id, handling) in handling_chats.iter() {
-                if handling.data.len() == handling.first_packet_sync.n_packets as usize {
-                    // TODO: last `ACK` packet
+            // it's needed because of calling self.handle_message
+            let handling_chat_ids = self.handling_keys.clone();
+            for chat_id in handling_chat_ids {
+                let data_len = self.handling[&chat_id].data.len();
+                let n_packets = self.handling[&chat_id].first_packet_sync.n_packets as usize;
 
+                if data_len == n_packets {
+                    // acknow remaining packets
+                    let acknowledging = PacketWindow {
+                        packet_ids: self.handling[&chat_id].acknowledging.clone()
+                    };
+                    if let Some(handling_chat) = self.handling.get_mut(&chat_id) {
+                        if let Ok(_) = ready!(SdpConnection::ack_window(
+                            cx, 
+                            &socket, 
+                            handling_chat.chat_t, 
+                            peer_id, 
+                            handling_chat.peer_id, 
+                            handling_chat.sender_src, 
+                            &acknowledging)
+                        ) {
+                            handling_chat.acknow();
+                        } else {
+                            continue;
+                        }
+                    }
+                    
                     // now we can handle message
-                    match self.handle_message(chat_id) {
+                    match self.handle_message(&chat_id) {
                         ControlFlow::Continue(()) => {
                             // never
                         },
@@ -941,9 +1087,28 @@ impl Future for SdpDriver {
                     }
                 }
 
-                // TODO: `ACK` packet 
+                if self.handling[&chat_id].acknowledging.len() == WINDOW_SIZE {
+                    let acknowledging = PacketWindow {
+                        packet_ids: self.handling[&chat_id].acknowledging.clone()
+                    };
+                    if let Some(handling_chat) = self.handling.get_mut(&chat_id) {
+                        if let Ok(_) = ready!(SdpConnection::ack_window(
+                            cx, 
+                            &socket, 
+                            handling_chat.chat_t, 
+                            peer_id, 
+                            handling_chat.peer_id, 
+                            handling_chat.sender_src, 
+                            &acknowledging)
+                        ) {
+                            handling_chat.acknow();
+                        } else {
+                            continue;
+                        }
+                    }
+                }
             }
-            
+
             // handling incoming packet 
             let mut buf_array = [0u8; RECEIVE_BUFFER_SIZE];
             let mut readbuf = ReadBuf::new(&mut buf_array);

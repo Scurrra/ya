@@ -9,7 +9,7 @@ pub use sdp::*;
 use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::Mutex;
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashSet};
 use std::ops::ControlFlow;
 use std::task::{Context, Poll, Waker};
 use std::future::Future;
@@ -289,6 +289,12 @@ pub trait Connection {
 // May be the struct name is not the best
 #[derive(Debug, Clone)]
 pub struct MessageHandler {
+    /// Sending [`Peer`]
+    peer_id: PeerId,
+
+    /// Message sender address
+    sender_src: SocketAddr,
+
     /// Type of the chat [`Packet`]/[`Message`] belongs to
     chat_t: Chat,
 
@@ -300,6 +306,21 @@ pub struct MessageHandler {
 
     /// Payloads of all received [`Packet`]s alongside their ids
     data: Vec<(u64, Vec<u8>)>,
+
+    /// ids of packets that are not acknowledged yet
+    acknowledging: Vec<u64>,
+    /// ids of packets that are acknowledged by the moment
+    // needed because  
+    acknowledged: HashSet<u64>
+}
+
+impl MessageHandler {
+    fn acknow(&mut self) {
+        self.acknowledged = self.acknowledged
+            .union(&HashSet::from_iter(self.acknowledging.clone()))
+            .map(|id| id.to_owned())
+            .collect::<HashSet<u64>>();
+    }
 }
 
 /// Payload of `ACK` packets
