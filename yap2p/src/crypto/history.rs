@@ -360,10 +360,6 @@ impl ChatSynchronizer {
     }
 
     /// Deserialize [`ChatSynchronizer`] from `bytes`
-    /// 
-    /// # Panics
-    /// 
-    /// This function panics if `bytes.len() != 40` 
     #[track_caller]
     pub fn deserialize(bytes: Vec<u8>) -> ChatSynchronizer {
         match bincode::deserialize(&bytes) {
