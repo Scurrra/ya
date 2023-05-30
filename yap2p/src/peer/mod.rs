@@ -100,6 +100,18 @@ impl Peer {
     }
 }
 
+/// Address type
+/// 
+/// If it is `Static` the [`Node`] can be used as a server. If it is `Dynamic` [`Node`] is completely useless.
+// as mylife do. TODO: remove this comment when become happy
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum AddrType {
+    /// Dynamic IP means that it changes all the time
+    Dynamic, // NAT is present 
+    /// Static IP means that it is constant all the time
+    Static   // The best variant that could ever exist
+}
+
 /// IP address of [`Node`]
 /// 
 /// Contains two fields: one for IPv4 address and one for IPv6,
@@ -107,6 +119,9 @@ impl Peer {
 #[allow(non_snake_case)] // because `V#` is better than `v#`
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct Addr {
+    /// Address type
+    addr_t: AddrType,
+
     /// IPv4 address
     pub V4: Option<Ipv4Addr>,
 
@@ -171,9 +186,10 @@ impl Node {
 
     /// Function for changing [`Node`]'s IPs. Needed to hide `std::sync::Mutex`
     /// from the user
-    pub fn set_ips(&self, ipv4: Option<Ipv4Addr>, ipv6: Option<Ipv6Addr>) {
+    pub fn set_ips(&self, addr_t: AddrType, ipv4: Option<Ipv4Addr>, ipv6: Option<Ipv6Addr>) {
         let mut ips = self.addrs.lock().unwrap();
         *ips = Addr {
+            addr_t,
             V4: ipv4,
             V6: ipv6
         };
@@ -209,6 +225,11 @@ impl Node {
     /// from the user
     pub fn get_ipv6(&self) -> Option<Ipv6Addr> {
         self.addrs.lock().unwrap().V6
+    }
+
+    /// Check if [`Addr`] is `Static`
+    pub fn is_static(&self) -> bool {
+        self.addrs.lock().unwrap().addr_t == AddrType::Static
     }
 }
 
