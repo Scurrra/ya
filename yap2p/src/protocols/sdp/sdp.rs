@@ -48,15 +48,16 @@ impl SdpConnection {
     /// * `chat_t` --- type of communication
     /// * `sender` --- [`PeerId`] of *this* [`Node`]
     /// * `receiver` --- [`Node`] and corresponding port number as tuple
-    /// * `payload` --- packet's payload
+    /// * `chat_sync` --- [`ChatSynchronizer`] of the chat to be synchronized
     pub async fn init(
         socket: &UdpSocket,
         chat_t: Chat,
         sender: PeerId,
         receiver: (Node, u16),
-        payload: &impl AsRef<[u8]>,
+        chat_sync: ChatSynchronizer,
     ) -> std::io::Result<usize> {
-        let length: u16 = 36 + payload.as_ref().len() as u16;
+        let chat_sync = chat_sync.serialize();
+        let length: u16 = 36 + chat_sync.len() as u16;
         let mut packet = match chat_t {
             Chat::OneToOne => Header::new(
                 ProtocolType::SDP,
@@ -84,7 +85,7 @@ impl SdpConnection {
             .serialize(),
         };
 
-        packet.extend_from_slice(payload.as_ref());
+        packet.extend_from_slice(&chat_sync);
 
         if let Some(addr) = receiver.0.get_ipv6() {
             return socket.send_to(&packet, (addr, receiver.1)).await;
@@ -104,15 +105,16 @@ impl SdpConnection {
     /// * `chat_t` --- type of communication
     /// * `sender` --- [`PeerId`] of *this* [`Node`]
     /// * `receiver` --- [`Node`] and corresponding port number as tuple
-    /// * `payload` --- packet's payload
+    /// * `chat_syncs` --- [`ChatSynchronizers`] of the chats to be synchronized
     pub async fn recover(
         socket: &UdpSocket,
         chat_t: Chat,
         sender: PeerId,
         receiver: (Node, u16),
-        payload: &impl AsRef<[u8]>,
+        chat_syncs: ChatSynchronizers,
     ) -> std::io::Result<usize> {
-        let length: u16 = 36 + payload.as_ref().len() as u16;
+        let chat_syncs = chat_syncs.serialize();
+        let length: u16 = 36 + chat_syncs.len() as u16;
         let mut packet = match chat_t {
             Chat::OneToOne => Header::new(
                 ProtocolType::SDP,
@@ -140,7 +142,7 @@ impl SdpConnection {
             .serialize(),
         };
 
-        packet.extend_from_slice(payload.as_ref());
+        packet.extend_from_slice(&chat_syncs);
 
         if let Some(addr) = receiver.0.get_ipv6() {
             return socket.send_to(&packet, (addr, receiver.1)).await;
@@ -670,7 +672,7 @@ impl Driver for SdpDriver {
         &mut self, 
         packet: &Vec<u8>, 
         packet_src: SocketAddr
-    ) -> ControlFlow<Result<(), Box<dyn Error>>, [u8; 32]>{
+    ) -> ControlFlow<Result<(), Box<dyn Error>>, [u8; 32]> {
 
         // [`Packet`] [`Header`] processing
         let header = Header::deserialize(packet[0..36].to_vec());
@@ -739,14 +741,8 @@ impl Driver for SdpDriver {
                 }
             },
             PacketType::HI => {
-                let chats_n = ((header.length - 36) / 40) as usize;
                 // chats for synchronization
-                let mut chat_syncs = Vec::with_capacity(chats_n.into());
-                for chat_i in 0..chats_n {
-                    chat_syncs.push(
-                        ChatSynchronizer::deserialize(packet[(36+chat_i*40)..(36+(chat_i+1)*40)].to_vec())
-                    );
-                }
+                let chat_syncs = ChatSynchronizers::deserialize(packet[36..].to_vec());
                 // message sender
                 let src_peer = if let Some(alive_conn) = self.connections.iter()
                     .find(
@@ -857,14 +853,8 @@ impl Driver for SdpDriver {
                 }
             },
             PacketType::ACK_HI => { // like `HI`, but another flag
-                let chats_n = ((header.length - 36) / 40) as usize;
                 // chats for synchronization
-                let mut chat_syncs = Vec::with_capacity(chats_n.into());
-                for chat_i in 0..chats_n {
-                    chat_syncs.push(
-                        ChatSynchronizer::deserialize(packet[(36+chat_i*40)..(36+(chat_i+1)*40)].to_vec())
-                    );
-                }
+                let chat_syncs = ChatSynchronizers::deserialize(packet[36..].to_vec());
                 // message sender
                 let src_peer = if let Some(alive_conn) = self.connections.iter()
                     .find(

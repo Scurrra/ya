@@ -1,7 +1,6 @@
-//! (Secure) Symmenric Datagram Protocol
+//! Symmenric Datagram Protocol
 //!
-//!
-//!
+//! Protocol for message exchange.
 
 mod sdp;
 pub use sdp::*;
@@ -395,7 +394,7 @@ pub enum MessageWrapper {
         /// Packet sender
         peer: Peer,
         /// List of [`History`]s sender wants to synchronize
-        histories: Vec<ChatSynchronizer>
+        histories: ChatSynchronizers
     },
 
     /// `INIT` packet
