@@ -60,6 +60,25 @@ impl PeerId {
             inner: id
         }
     }
+
+    /// Serialize [`PeerId`] into bytes
+    /// 
+    /// # Panics
+    /// 
+    /// This function should not panic, 
+    /// but if it does the problem is in `bincode` crate
+    pub fn serialize(&self) -> Vec<u8> {
+        bincode::serialize(&self).unwrap()
+    }
+
+    /// Deserialize [`PeerId`] from `bytes`
+    #[track_caller]
+    pub fn deserialize(bytes: Vec<u8>) -> PeerId {
+        match bincode::deserialize(&bytes) {
+            Ok(peer_id) => peer_id,
+            Err(_) => panic!("Wrong size of `ChatSynchronizer`"),
+        }
+    }
 }
 
 /// `Peer` struct
@@ -97,6 +116,25 @@ impl Peer {
         }
 
         u64::from_be_bytes(be_bytes)
+    }
+
+    /// Serialize [`Peer`] into bytes
+    /// 
+    /// # Panics
+    /// 
+    /// This function should not panic, 
+    /// but if it does the problem is in `bincode` crate
+    pub fn serialize(&self) -> Vec<u8> {
+        bincode::serialize(&self).unwrap()
+    }
+
+    /// Deserialize [`Peer`] from `bytes`
+    #[track_caller]
+    pub fn deserialize(bytes: Vec<u8>) -> Peer {
+        match bincode::deserialize(&bytes) {
+            Ok(peer) => peer,
+            Err(_) => panic!("Wrong size of `ChatSynchronizer`"),
+        }
     }
 }
 
