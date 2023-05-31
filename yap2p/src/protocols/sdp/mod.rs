@@ -9,9 +9,7 @@ use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::collections::{VecDeque, HashSet};
-use std::ops::ControlFlow;
-use std::task::{Context, Poll, Waker};
-use std::future::Future;
+use std::task::Waker;
 use std::pin::Pin;
 
 use serde::{Serialize, Deserialize};
@@ -250,40 +248,6 @@ struct ConnectionWaker {
     waker: Option<Waker>
 }
 
-/// An abstraction for specific connection functions
-/// 
-/// ! No receiving functions, because they are into the [`Driver`] trait
-pub trait Connection {
-    /// Send service echo packet to another [`Peer`]
-    ///
-    /// Arguments
-    ///
-    /// * `sender` --- [`PeerId`] of *this* [`Node`]
-    /// * `receiver` --- [`Node`] and corresponding port number as tuple
-    fn echo(
-        &self, cx: &mut Context<'_>,
-        sender: &PeerId, receiver: (&Node, u16),
-    ) -> Poll<std::io::Result<usize>>;
-
-    /// Start sending the [`Message`]. Function constructs entities of special [`Transaction`]
-    /// struct which defines which data should be sent. 
-    /// 
-    /// Arguments
-    /// 
-    /// * `chat_t` --- [`Chat`] type 
-    /// * `message` --- the message to be sent
-    /// * `chat_sync` --- synchronization information from the corresponding [`History`]
-    fn send(
-        &self, 
-        chat_t: Chat,
-        message: Message,
-        chat_sync: ChatSynchronizer
-    ) -> ControlFlow<Result<(), Box<dyn Error>>, u64>;
-
-    /// Exact function that sends [`Transaction`]s
-    fn poll_send(&self, cx: &mut Context<'_>) -> Poll<Result<(), Box<dyn Error>>>;
-}
-
 /// Wrapper for a list of payloads of received [`Packet`]s
 // May be the struct name is not the best
 #[derive(Debug, Clone)]
@@ -406,37 +370,4 @@ pub enum MessageWrapper {
         /// [`History`] to be initialised
         history: ChatSynchronizer
     }
-}
-
-/// An abstraction for specific driver functions
-/// 
-/// ! No sendinging functions, because they are into the [`Connection`] trait.
-/// ! Alongside this trait the [`Future`] trait must be implemented.
-pub trait Driver: Future {
-    /// Function for handling a single datagram. This function also handles single-only packets of types
-    /// [`PacketType::HI`] | [`PacketType::INIT`] | [`PacketType::ECHO`]
-    /// 
-    /// Arguments 
-    /// 
-    /// * `packet` --- the received packet
-    /// * `packet_src` --- [`SocketAddr`] `packet` was received from
-    /// 
-    /// Panics
-    /// 
-    /// Function panics if there is no opened connections to the specified address
-    fn handle_dataram(
-        &mut self, 
-        packet: &Vec<u8>, 
-        packet_src: SocketAddr
-    ) -> ControlFlow<Result<(), Box<dyn Error>>, [u8; 32]>;
-
-    /// Function for handling a single message
-    /// 
-    /// Arguments 
-    /// 
-    /// * `chat_id` --- id of the chat the message belongs to
-    fn handle_message(
-        &mut self, 
-        chat_id: &[u8; 32]
-    ) -> ControlFlow<Result<(), Box<dyn Error>>, ()>;
 }

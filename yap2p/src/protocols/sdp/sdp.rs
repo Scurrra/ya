@@ -1,7 +1,8 @@
 use std::ops::ControlFlow;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll, Waker};
+use std::task::{Context, Poll};
+use std::future::Future;
 use std::collections::{HashMap, VecDeque};
 
 use tokio::{
