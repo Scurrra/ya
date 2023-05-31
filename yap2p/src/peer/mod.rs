@@ -76,7 +76,7 @@ impl PeerId {
     pub fn deserialize(bytes: Vec<u8>) -> PeerId {
         match bincode::deserialize(&bytes) {
             Ok(peer_id) => peer_id,
-            Err(_) => panic!("Wrong size of `ChatSynchronizer`"),
+            Err(_) => panic!("Wrong size of `PeerId`"),
         }
     }
 }
@@ -133,7 +133,7 @@ impl Peer {
     pub fn deserialize(bytes: Vec<u8>) -> Peer {
         match bincode::deserialize(&bytes) {
             Ok(peer) => peer,
-            Err(_) => panic!("Wrong size of `ChatSynchronizer`"),
+            Err(_) => panic!("Wrong size of `Peer`"),
         }
     }
 }
@@ -272,6 +272,7 @@ impl Node {
 }
 
 /// Analog for [`Node`] but for storing all available [`Node`]s of the [`Peer`]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Contact {
     /// [`Peer`] that owns all this [`Addr`]s
     pub peer: Peer,
@@ -373,5 +374,26 @@ impl Contact {
         (
             *self.addrs.lock().unwrap()
         ).get(&device_id).copied()
+    }
+
+    // Here goes magic
+
+    /// Serialize [`Contact`] into bytes
+    /// 
+    /// # Panics
+    /// 
+    /// This function should not panic, 
+    /// but if it does the problem is in `bincode` crate
+    pub fn serialize(&self) -> Vec<u8> {
+        bincode::serialize(&self).unwrap()
+    }
+
+    /// Deserialize [`Contact`] from `bytes`
+    #[track_caller]
+    pub fn deserialize(bytes: Vec<u8>) -> Contact {
+        match bincode::deserialize(&bytes) {
+            Ok(contact) => contact,
+            Err(_) => panic!("Wrong size of `Contact`"),
+        }
     }
 }

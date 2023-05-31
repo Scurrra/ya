@@ -391,7 +391,7 @@ impl ChatSynchronizers {
     pub fn deserialize(bytes: Vec<u8>) -> ChatSynchronizers {
         match bincode::deserialize(&bytes) {
             Ok(chat_syncs) => chat_syncs,
-            Err(_) => panic!("Wrong size of `ChatSynchronizer`"),
+            Err(_) => panic!("Wrong size of `ChatSynchronizers`"),
         }
     }
 }
