@@ -59,8 +59,6 @@ impl SelfSynchronizer {
     }
 }
 
-impl Synchronizer for SelfSynchronizer {  }
-
 /// Symmenric Datagram Protocol Connection struct
 /// 
 /// This struct is only for sending.

@@ -142,9 +142,3 @@ impl Header {
         }
     }
 }
-
-/// Interface for all synchronizers.
-pub trait Synchronizer {  }
-
-impl Synchronizer for ChatSynchronizer {  }
-impl Synchronizer for ChatSynchronizers {  }
