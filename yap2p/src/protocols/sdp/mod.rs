@@ -5,6 +5,9 @@
 mod sdp;
 pub use sdp::*;
 
+mod sdp_self;
+pub use sdp_self::*;
+
 use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::Mutex;
@@ -316,7 +319,7 @@ pub enum Acknowledgement {
 }
 
 /// Wrapper for a standard message 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum MessageWrapper {
     /// Regular message from `SYN` packet
     Receiving {
@@ -361,7 +364,7 @@ pub enum MessageWrapper {
         histories: ChatSynchronizers
     },
 
-    /// `INIT` packet
+    /// `INIT` packet in SDP
     Initial {
         /// Is it an ackhowledgement packet 
         ack: bool,
@@ -369,5 +372,25 @@ pub enum MessageWrapper {
         peer: Peer,
         /// [`History`] to be initialised
         history: ChatSynchronizer
+    },
+
+    /// `HI` packet
+    SelfRecover {
+        /// Is it an ackhowledgement packet 
+        ack: bool,
+        /// Packet sender's id
+        device_id: u16,
+        /// Data to synchronize
+        sync: SelfSynchronizer
+    },
+
+    /// `INIT` packet in SDP
+    SelfInitial {
+        /// Is it an ackhowledgement packet 
+        ack: bool,
+        /// Packet sender
+        device_id: u16,
+        /// Data to synchronize
+        sync: SelfSynchronizer
     }
 }

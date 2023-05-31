@@ -1,5 +1,7 @@
 //! YAP2P protocols logic
 
+use crate::crypto::history::{ChatSynchronizer, ChatSynchronizers};
+
 #[allow(unused_imports)]
 
 use super::peer::{Peer, PeerId};
@@ -19,7 +21,7 @@ bitflags! {
         /// SDP --- Symmetric Datagram Protocol
         const SDP = 0b10000000;
 
-        /// SSDP --- Secure Symmetric Datagram Protocol
+        /// SSDP --- Self Symmetric Datagram Protocol
         const SSDP = 0b01000000;
 
         // reserved for future
@@ -40,6 +42,9 @@ bitflags! {
         
         /// Hello packet for full synchronization
         const HI =      0b00100000;
+
+        /// First Hello packet in SelfSDP
+        const HI_INIT = Self::INIT.bits() | Self::HI.bits();        
         
         /// Synchronization packet for data transfission
         const SYN =     0b00010000;
@@ -66,6 +71,9 @@ bitflags! {
         
         /// `INIT` packet `ACK`
         const ACK_INIT = Self::ACK.bits() | Self::INIT.bits();
+
+        /// `HI_INIT` packet `ACK`
+        const ACK_HI_INIT = Self::ACK.bits() | Self::INIT.bits() | Self::HI.bits();
     }           
 }
 
@@ -134,3 +142,9 @@ impl Header {
         }
     }
 }
+
+/// Interface for all synchronizers.
+pub trait Synchronizer {  }
+
+impl Synchronizer for ChatSynchronizer {  }
+impl Synchronizer for ChatSynchronizers {  }

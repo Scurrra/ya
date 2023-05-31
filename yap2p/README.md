@@ -22,12 +22,9 @@ This library proposes a new P2P network topology that enables users to connect m
    - [x] Something called KeyChain
    - [x] Messages and History
 - [x] Peers and Nodes
-- [ ] Protocols
+- [x] Protocols
    - [x] Symmetric Datagram Protocol
-      - [x] Sending messages
-      - [x] Receiving Messages
-      - [x] Packets acknowledgement
-   - [ ] Secure Symmetric Datagram Protocol
+   - [x] Self Symmetric Datagram Protocol
 - [ ] Network
    - [x] Description
    - [ ] SelfNet
