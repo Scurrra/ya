@@ -4,6 +4,7 @@
 //! The user is called [`Peer`], while user's devices are called [`Node`].
 
 use serde::{Serialize, Deserialize};
+use bincode;
 use sha2::{Sha512, Digest};
 
 use std::net::{Ipv4Addr, Ipv6Addr, IpAddr};

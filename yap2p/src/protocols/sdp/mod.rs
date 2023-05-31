@@ -14,6 +14,8 @@ use std::task::{Context, Poll, Waker};
 use std::future::Future;
 use std::pin::Pin;
 
+use serde::{Serialize, Deserialize};
+use bincode;
 use rand::Rng;
 
 use super::*;
@@ -84,7 +86,7 @@ impl Packet {
     }
 
     pub(crate) fn serialize(&self) -> Vec<u8> {
-        let mut packet = bincode::serialize(&self.header).unwrap();
+        let mut packet = self.header.serialize();
         packet.extend(&self.chat_sync.serialize());
         packet.extend(&self.packet_sync.serialize());
         packet.extend(&self.payload);
