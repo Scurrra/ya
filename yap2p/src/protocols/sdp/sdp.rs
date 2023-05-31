@@ -337,7 +337,8 @@ impl SdpConnection {
     }
 }
 
-impl Connection for SdpConnection {
+// Separate implementation just because
+impl SdpConnection {
     /// Send service echo packet to another [`Peer`]
     ///
     /// Arguments
@@ -689,7 +690,8 @@ impl SdpDriver {
     }
 }
 
-impl Driver for SdpDriver {
+// Separate implementation just because
+impl SdpDriver {
     /// Function for handling a single datagram. This function also handles single-only packets of types
     /// [`PacketType::HI`] | [`PacketType::INIT`] | [`PacketType::ECHO`]
     /// 
