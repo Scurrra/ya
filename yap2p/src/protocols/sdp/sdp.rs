@@ -98,6 +98,63 @@ impl SdpConnection {
         }
     }
 
+    /// Send initial acknowledgement packet to another [`Peer`]
+    ///
+    /// Arguments
+    ///
+    /// * `socket` --- [`UdpSocket`] to be used for sending
+    /// * `chat_t` --- type of communication
+    /// * `sender` --- [`PeerId`] of *this* [`Node`]
+    /// * `receiver` --- [`Node`] and corresponding port number as tuple
+    /// * `chat_sync` --- [`ChatSynchronizer`] of the chat to be synchronized
+    pub async fn ack_init(
+        socket: &UdpSocket,
+        chat_t: Chat,
+        sender: PeerId,
+        receiver: (Node, u16),
+        chat_sync: ChatSynchronizer,
+    ) -> std::io::Result<usize> {
+        let chat_sync = chat_sync.serialize();
+        let length: u16 = 36 + chat_sync.len() as u16;
+        let mut packet = match chat_t {
+            Chat::OneToOne => Header::new(
+                ProtocolType::SDP,
+                PacketType::CHAT | PacketType::ACK_INIT,
+                length,
+                sender,
+                receiver.0.peer.id.to_owned(),
+            )
+            .serialize(),
+            Chat::Group => Header::new(
+                ProtocolType::SDP,
+                PacketType::CONV | PacketType::ACK_INIT,
+                length,
+                sender,
+                receiver.0.peer.id.to_owned(),
+            )
+            .serialize(),
+            Chat::Channel => Header::new(
+                ProtocolType::SDP,
+                PacketType::CHAN | PacketType::ACK_INIT,
+                length,
+                sender,
+                receiver.0.peer.id.to_owned(),
+            )
+            .serialize(),
+        };
+
+        packet.extend_from_slice(&chat_sync);
+
+        if let Some(addr) = receiver.0.get_ipv6() {
+            return socket.send_to(&packet, (addr, receiver.1)).await;
+        } else if let Some(addr) = receiver.0.get_ipv4() {
+            return socket.send_to(&packet, (addr, receiver.1)).await;
+        } else {
+            // there probably will be no errors returned, but...
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+
     /// Send `HI` packet to another [`Peer`]
     ///
     /// Arguments
@@ -136,6 +193,63 @@ impl SdpConnection {
             Chat::Channel => Header::new(
                 ProtocolType::SDP,
                 PacketType::CHAN | PacketType::HI,
+                length,
+                sender,
+                receiver.0.peer.id.to_owned(),
+            )
+            .serialize(),
+        };
+
+        packet.extend_from_slice(&chat_syncs);
+
+        if let Some(addr) = receiver.0.get_ipv6() {
+            return socket.send_to(&packet, (addr, receiver.1)).await;
+        } else if let Some(addr) = receiver.0.get_ipv4() {
+            return socket.send_to(&packet, (addr, receiver.1)).await;
+        } else {
+            // there probably will be no errors returned, but...
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+
+    /// Send `HI` acknowledgement packet to another [`Peer`]
+    ///
+    /// Arguments
+    ///
+    /// * `socket` --- [`UdpSocket`] to be used for sending
+    /// * `chat_t` --- type of communication
+    /// * `sender` --- [`PeerId`] of *this* [`Node`]
+    /// * `receiver` --- [`Node`] and corresponding port number as tuple
+    /// * `chat_syncs` --- [`ChatSynchronizers`] of the chats to be synchronized
+    pub async fn ack_recover(
+        socket: &UdpSocket,
+        chat_t: Chat,
+        sender: PeerId,
+        receiver: (Node, u16),
+        chat_syncs: ChatSynchronizers,
+    ) -> std::io::Result<usize> {
+        let chat_syncs = chat_syncs.serialize();
+        let length: u16 = 36 + chat_syncs.len() as u16;
+        let mut packet = match chat_t {
+            Chat::OneToOne => Header::new(
+                ProtocolType::SDP,
+                PacketType::CHAT | PacketType::ACK_HI,
+                length,
+                sender,
+                receiver.0.peer.id.to_owned(),
+            )
+            .serialize(),
+            Chat::Group => Header::new(
+                ProtocolType::SDP,
+                PacketType::CONV | PacketType::ACK_HI,
+                length,
+                sender,
+                receiver.0.peer.id.to_owned(),
+            )
+            .serialize(),
+            Chat::Channel => Header::new(
+                ProtocolType::SDP,
+                PacketType::CHAN | PacketType::ACK_HI,
                 length,
                 sender,
                 receiver.0.peer.id.to_owned(),
@@ -924,6 +1038,7 @@ impl SdpDriver {
                         None => {
                             // drop transaction if it is started
                             self.handling.remove(&chat_sync.chat_id);
+                            self.handling_keys.remove(&chat_sync.chat_id);
                             return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into()))
                         },
                         Some(device_id) => {
@@ -944,6 +1059,7 @@ impl SdpDriver {
                 } else {
                     // drop transaction if it is started
                     self.handling.remove(&chat_sync.chat_id);
+                    self.handling_keys.remove(&chat_sync.chat_id);
                     return ControlFlow::Break(Err("No connections to the source peer".into()));
                 };
             },
@@ -959,6 +1075,7 @@ impl SdpDriver {
                         None => {
                             // drop transaction if it is started
                             self.handling.remove(&chat_sync.chat_id);
+                            self.handling_keys.remove(&chat_sync.chat_id);
                             return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into()))
                         },
                         Some(device_id) => {
@@ -970,12 +1087,13 @@ impl SdpDriver {
                                 }
                             };
                             // and acknow it
-                            alive_conn.1.ack_packets(device_id, &packet_ids)
+                            alive_conn.1.ack_packets(device_id, &packet_ids);
                         }
                     }
                 } else {
                     // drop transaction if it is started
                     self.handling.remove(&chat_sync.chat_id);
+                    self.handling_keys.remove(&chat_sync.chat_id);
                     return ControlFlow::Break(Err("No connections to the source peer".into()));
                 };
             },
@@ -1063,10 +1181,6 @@ impl Future for SdpDriver {
         // 2. handle incoming packets
         // 3. send packets; while sending block handling on the connection
         //      ! there is no machanism for handling packets from the specified address, block all of them
-        // 4. previous steps are needed because of SSDP (another module)
-        // 
-        // 
-        // 
         loop {
             // handle message
             // I hate this copies
@@ -1089,8 +1203,8 @@ impl Future for SdpDriver {
                             peer_id, 
                             handling_chat.peer_id, 
                             handling_chat.sender_src, 
-                            &acknowledging)
-                        ) {
+                            &acknowledging
+                        )) {
                             handling_chat.acknow();
                         } else {
                             continue;
@@ -1123,8 +1237,8 @@ impl Future for SdpDriver {
                             peer_id, 
                             handling_chat.peer_id, 
                             handling_chat.sender_src, 
-                            &acknowledging)
-                        ) {
+                            &acknowledging
+                        )) {
                             handling_chat.acknow();
                         } else {
                             continue;
@@ -1152,8 +1266,8 @@ impl Future for SdpDriver {
                                     peer_id, 
                                     handling_chat.peer_id, 
                                     handling_chat.sender_src, 
-                                    handling_chat.first_packet_sync)
-                                ) {
+                                    handling_chat.first_packet_sync
+                                )) {
                                     // first packet acknowledged
                                 } else {
                                     continue;
@@ -1181,7 +1295,6 @@ impl Future for SdpDriver {
             for i in 0..self.sending_deque.len() {
                 // send message to all ready peers
                 let mut is_sent = false;
-                let wrapper = &self.sending_deque[i];
                 match &self.sending_deque[i] {
                     MessageWrapper::Sending { 
                         receivers, 
