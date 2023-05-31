@@ -356,7 +356,7 @@ impl SdpConnection {
                 PacketType::ECHO,
                 36, // just empty header *for now*
                 sender.clone(),
-                receiver.0.peer.id.to_owned(),
+                receiver.0.peer.id,
             )
             .serialize();
 
@@ -439,9 +439,6 @@ impl SdpConnection {
                 }
             );
         }
-
-        // here to be `self.poll_send()` to set waker
-        // called from Driver.poll
 
         return ControlFlow::Continue(n_packets);
     }
@@ -1184,7 +1181,8 @@ impl Future for SdpDriver {
             for i in 0..self.sending_deque.len() {
                 // send message to all ready peers
                 let mut is_sent = false;
-                match self.sending_deque[i].clone() {
+                let wrapper = &self.sending_deque[i];
+                match &self.sending_deque[i] {
                     MessageWrapper::Sending { 
                         receivers, 
                         chat_t, 
@@ -1196,10 +1194,10 @@ impl Future for SdpDriver {
                             if ConnectionState::Sending == state.to_owned().state {
                                 continue;
                             }
-                            match self.connections[&receiver].send(
-                                chat_t, 
+                            match self.connections[receiver].send(
+                                chat_t.to_owned(), 
                                 message.clone(), 
-                                chat_sync
+                                chat_sync.to_owned()
                             ) {
                                 ControlFlow::Break(Ok(())) => {    
                                     // another message is currently sending
@@ -1241,7 +1239,7 @@ impl Future for SdpDriver {
                 Ok(Some(message)) => {
                     // send message to all ready peers
                     let mut is_sent = false;
-                    match message.clone() {
+                    match &message {
                         MessageWrapper::Sending { 
                             receivers, 
                             chat_t, 
@@ -1253,10 +1251,10 @@ impl Future for SdpDriver {
                                 if ConnectionState::Sending == state.to_owned().state {
                                     continue;
                                 }
-                                match self.connections[&receiver].send(
-                                    chat_t, 
+                                match self.connections[receiver].send(
+                                    chat_t.to_owned(), 
                                     message.clone(), 
-                                    chat_sync
+                                    chat_sync.to_owned()
                                 ) {
                                     ControlFlow::Break(Ok(())) => {
                                         // another message is currently sending
