@@ -439,6 +439,7 @@ impl Connection for SdpConnection {
         }
 
         // here to be `self.poll_send()` to set waker
+        // called from Driver.poll
 
         return ControlFlow::Continue(n_packets);
     }
@@ -457,9 +458,13 @@ impl Connection for SdpConnection {
             }
         }
 
+        // transactions to update id
+        let mut transactions_to_update_ids = Vec::new();
+
         // does not need to be mutable
-        let send_queue: std::sync::MutexGuard<HashMap<u16, Transaction>> = self.send_queue.lock().unwrap();   
+        let send_queue = self.send_queue.lock().unwrap();   
         let mut devices_to_be_killed = Vec::new();     
+        let mut devices_transacted = Vec::new();
         // iterate throw the send_queue
         // [`Transaction::First`] is checked because it's a match
         // P. S. if somehow occurs that transactions can't mutate, it't because of `(*send_queue).iter()`  
@@ -489,7 +494,7 @@ impl Connection for SdpConnection {
                             //     first_packet.sync();
                             // }
 
-                            // TODO: change id of the first packet?
+                            transactions_to_update_ids.push(device_id.to_owned());
                         } // if wasn't sent, it will not be sync
                     } else if let Some(addr_ip) = addr.0.V4 {
                         // oh, it's not *dry*
@@ -507,6 +512,8 @@ impl Connection for SdpConnection {
                             // if n_bytes_sent as u16 == first_packet.header.length {
                             //     first_packet.sync();
                             // }
+
+                            transactions_to_update_ids.push(device_id.to_owned());
                         } // if wasn't sent, it will not be sync
                     } else {
                         // this should be empty
@@ -522,7 +529,14 @@ impl Connection for SdpConnection {
                     payload 
                 } => {
                     let mut payload = payload.lock().unwrap();
-                    let current_packet = (*payload).pop_front().unwrap();
+                    let current_packet = match (*payload).pop_front() {
+                        Some(current_packet) => current_packet,
+                        None => {
+                            // empty send queue
+                            devices_transacted.push(device_id);
+                            continue;
+                        }
+                    };
 
                     // convert `(Addr, u16)` to SocketAddr
                     // change logic if it's changed in previous case
@@ -578,10 +592,29 @@ impl Connection for SdpConnection {
 
         // if we kill all connections, we panic
         if send_queue.len() == 0 {
+            (*conn_state).waker = None;
+            (*conn_state).state = ConnectionState::Pending;
             return Poll::Ready(Err("All `Nodes` are dead before end of the transaction".into()));
         }
 
-        // no way to return `Poll::Ready(())` because of it's semantics: poll is ready when all packets send 
+        // kill ended transactions
+        for dead in devices_transacted {
+            (*send_queue).remove(dead);
+        }
+
+        // return `Poll::Ready(())`: poll is ready when all packets send 
+        if send_queue.len() == 0 {
+            (*conn_state).waker = None;
+            (*conn_state).state = ConnectionState::Pending;
+            return Poll::Ready(Ok(()));
+        }
+
+        // update id strategy for sent first packets
+        for trans in transactions_to_update_ids {
+            let transaction = (*send_queue).remove(&trans).unwrap();
+            (*send_queue).insert(trans, transaction.update_id_strategy().unwrap());
+        }
+
         // and acknowledged what is checked while handling the message
         return Poll::Pending;
     }
@@ -718,6 +751,7 @@ impl Driver for SdpDriver {
                 // chat for initializing
                 let chat_sync = ChatSynchronizer::deserialize(packet[36..76].to_vec());
                 // message sender
+                // it's not a wrong logic, because [`Peer`]s should contact phisically for the first time
                 let src_peer = if let Some(alive_conn) = self.connections.iter()
                     .find(
                     |(peer, _)| peer.id == header.src_id
@@ -759,7 +793,7 @@ impl Driver for SdpDriver {
                 if let Err(e) = self.receiving.try_send(
                     MessageWrapper::Recover { 
                             ack: false, 
-                            peer: src_peer, 
+                            peer_id: src_peer.id, 
                             histories: chat_syncs
                 }) {
                     // attempt to handle channel error
@@ -871,7 +905,7 @@ impl Driver for SdpDriver {
                 if let Err(e) = self.receiving.try_send(
                     MessageWrapper::Recover { 
                             ack: true, 
-                            peer: src_peer, 
+                            peer_id: src_peer.id, 
                             histories: chat_syncs
                 }) {
                     // attempt to handle channel error
@@ -1173,7 +1207,17 @@ impl Future for SdpDriver {
                                     // dead code
                                 },
                                 ControlFlow::Continue(n_packets) => {
-                                    is_sent = true;
+                                    match self.connections[&receiver].poll_send(cx) {
+                                        Poll::Ready(Ok(())) => {
+                                            is_sent = true;
+                                        },
+                                        Poll::Ready(Err(e)) => {
+                                            // if I'm right, connection is already ConnectionState::Pending
+                                        },
+                                        Poll::Pending => {
+                                            // if I'm right, it's dead logic
+                                        }
+                                    }
                                 },
                             }
                         }

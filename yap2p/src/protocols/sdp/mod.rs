@@ -230,9 +230,7 @@ impl Transaction {
                 payload
             } => {
                 let mut packets = payload.lock().unwrap();
-                (*packets).iter()
-                    .filter(|p| packet_ids.contains(&p.packet_sync.packet_id))
-                    .map(|p| p.sync());   
+                (*packets).retain(|p| !packet_ids.contains(&p.packet_sync.packet_id));   
             }
         }
     }
@@ -391,8 +389,8 @@ pub enum MessageWrapper {
     Recover {
         /// Is it an ackhowledgement packet 
         ack: bool,
-        /// Packet sender
-        peer: Peer,
+        /// Packet sender's id
+        peer_id: PeerId,
         /// List of [`History`]s sender wants to synchronize
         histories: ChatSynchronizers
     },
