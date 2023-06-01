@@ -1,5 +1,8 @@
 # Yet Another Project
 
+[![slack](https://img.shields.io/badge/slack-YetAnother-orange.svg?logo=slack)](https://join.slack.com/t/yetanotherproject/shared_invite/zt-1wcj5ykz9-LFxAct_Btnmf1EnTqUX78w)
+
+
 This repository contains some yet another applicatios - reinvented technologies and yet again implemented applications.
 
 ## Yet Another Peer-to-Peer
