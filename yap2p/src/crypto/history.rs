@@ -233,6 +233,7 @@ impl History {
         };
 
         // update history's top key
+        // TODO: here may be conflicts due to synchronization issues
         self.top_key.update(key);
 
         // update history's top timestamp
