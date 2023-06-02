@@ -12,10 +12,8 @@ use bincode;
 use super::keychain::KeyChain;
 use crate::peer::*;
 
-#[cfg_attr(docsrs, doc(cfg(feature = "unknown-fields")))]
 #[cfg(feature = "regular_history")]
 mod history_regular;
-#[cfg_attr(docsrs, doc(cfg(feature = "unknown-fields")))]
 #[cfg(feature = "regular_history")]
 pub use history_regular::*;
 
