@@ -8,6 +8,10 @@ repository = "https://github.com/Scurrra/ya"
 categories = ["asynchronous", "network-programming"]
 keywords = ["io", "async", "futures", "tokio"]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 aes = "0.8.2"
 rand = "0.8.5"
@@ -25,9 +29,16 @@ bincode = "1.3.3"
 futures = "0.3.28"
 
 [features]
-default = ["reqwest"]
+default = ["reqwest", "regular_history", "store_chain"]
 
 # http clients
 reqwest = ["dep:reqwest"]   # tokio & futures & hyper
 ureq = ["dep:ureq"]         # ...
 isahc = ["dep:isahc"]       # futures
+
+# history
+regular_history = []
+sync_safe_history = []
+
+# keychain
+store_chain = []
