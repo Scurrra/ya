@@ -19,9 +19,9 @@ mod history_regular;
 #[cfg(feature = "regular_history")]
 pub use history_regular::*;
 
-//#[cfg(feature = "sync_safe_history")]
+#[cfg(feature = "sync_safe_history")]
 mod history_safe;
-//#[cfg(feature = "sync_safe_history")]
+#[cfg(feature = "sync_safe_history")]
 pub use history_safe::*;
 
 /// Chat type
