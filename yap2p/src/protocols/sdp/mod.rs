@@ -333,7 +333,7 @@ pub enum MessageWrapper {
 
     /// Regular message to be sent
     Sending {
-        /// all posible receivers of the [`Message`]
+        /// All posible receivers of the [`Message`]
         receivers: Vec<Peer>,
         /// Type of the chat
         chat_t: Chat,

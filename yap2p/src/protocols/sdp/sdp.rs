@@ -160,45 +160,25 @@ impl SdpConnection {
     /// Arguments
     ///
     /// * `socket` --- [`UdpSocket`] to be used for sending
-    /// * `chat_t` --- type of communication
     /// * `sender` --- [`PeerId`] of *this* [`Node`]
     /// * `receiver` --- [`Node`] and corresponding port number as tuple
     /// * `chat_syncs` --- [`ChatSynchronizers`] of the chats to be synchronized
     pub async fn recover(
         socket: &UdpSocket,
-        chat_t: Chat,
         sender: PeerId,
         receiver: (Node, u16),
         chat_syncs: ChatSynchronizers,
     ) -> std::io::Result<usize> {
         let chat_syncs = chat_syncs.serialize();
         let length: u16 = 36 + chat_syncs.len() as u16;
-        let mut packet = match chat_t {
-            Chat::OneToOne => Header::new(
+        let mut packet = Header::new(
                 ProtocolType::SDP,
-                PacketType::CHAT | PacketType::HI,
+                PacketType::HI,
                 length,
                 sender,
                 receiver.0.peer.id.to_owned(),
             )
-            .serialize(),
-            Chat::Group => Header::new(
-                ProtocolType::SDP,
-                PacketType::CONV | PacketType::HI,
-                length,
-                sender,
-                receiver.0.peer.id.to_owned(),
-            )
-            .serialize(),
-            Chat::Channel => Header::new(
-                ProtocolType::SDP,
-                PacketType::CHAN | PacketType::HI,
-                length,
-                sender,
-                receiver.0.peer.id.to_owned(),
-            )
-            .serialize(),
-        };
+            .serialize();
 
         packet.extend_from_slice(&chat_syncs);
 
@@ -217,45 +197,25 @@ impl SdpConnection {
     /// Arguments
     ///
     /// * `socket` --- [`UdpSocket`] to be used for sending
-    /// * `chat_t` --- type of communication
     /// * `sender` --- [`PeerId`] of *this* [`Node`]
     /// * `receiver` --- [`Node`] and corresponding port number as tuple
     /// * `chat_syncs` --- [`ChatSynchronizers`] of the chats to be synchronized
     pub async fn ack_recover(
         socket: &UdpSocket,
-        chat_t: Chat,
         sender: PeerId,
         receiver: (Node, u16),
         chat_syncs: ChatSynchronizers,
     ) -> std::io::Result<usize> {
         let chat_syncs = chat_syncs.serialize();
         let length: u16 = 36 + chat_syncs.len() as u16;
-        let mut packet = match chat_t {
-            Chat::OneToOne => Header::new(
+        let mut packet = Header::new(
                 ProtocolType::SDP,
-                PacketType::CHAT | PacketType::ACK_HI,
+                PacketType::ACK_HI,
                 length,
                 sender,
                 receiver.0.peer.id.to_owned(),
             )
-            .serialize(),
-            Chat::Group => Header::new(
-                ProtocolType::SDP,
-                PacketType::CONV | PacketType::ACK_HI,
-                length,
-                sender,
-                receiver.0.peer.id.to_owned(),
-            )
-            .serialize(),
-            Chat::Channel => Header::new(
-                ProtocolType::SDP,
-                PacketType::CHAN | PacketType::ACK_HI,
-                length,
-                sender,
-                receiver.0.peer.id.to_owned(),
-            )
-            .serialize(),
-        };
+            .serialize();
 
         packet.extend_from_slice(&chat_syncs);
 
