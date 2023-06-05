@@ -25,6 +25,7 @@ This library proposes a new P2P network topology that enables users to connect m
 - [x] Protocols
    - [x] Symmetric Datagram Protocol
    - [x] Self Symmetric Datagram Protocol
+   - [ ] Mesh Building Protocol
 - [ ] Network
    - [x] Description
    - [ ] SelfNet

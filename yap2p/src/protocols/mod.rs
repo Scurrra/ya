@@ -1,7 +1,4 @@
 //! YAP2P protocols logic
-
-use crate::crypto::history::{ChatSynchronizer, ChatSynchronizers};
-
 #[allow(unused_imports)]
 
 use super::peer::{Peer, PeerId};
@@ -11,6 +8,7 @@ use serde::{Serialize, Deserialize};
 use bincode;
 
 pub mod sdp;
+mod mbp;
 
 bitflags! {
     /// Protocols enum
@@ -24,6 +22,9 @@ bitflags! {
         /// SSDP --- Self Symmetric Datagram Protocol
         const SSDP = 0b01000000;
 
+        /// MBP --- Mesh Building Protocol
+        const MBP = 0b00100000;
+        
         // reserved for future
     }
 }
