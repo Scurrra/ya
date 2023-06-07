@@ -204,7 +204,7 @@ pub struct Node {
     // [`std::sync::Mutex`] just for interior mutability
     // so `addrs` should not be used in async
     // I'm not actually sure that we really need [`Mutex`] here
-    addrs: Mutex<Addr>
+    pub(crate) addrs: Mutex<Addr>
 }
 
 impl Node {
