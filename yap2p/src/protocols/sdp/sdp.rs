@@ -829,7 +829,7 @@ impl SdpDriver {
                 let src_peer = if let Some(alive_conn) = self.connections.iter()
                     .find(
                     |(peer, _)| peer.id == header.src_id
-                ){
+                ) {
                     match alive_conn.1.check_addr(packet_src) {
                         None => return ControlFlow::Break(Err("No connections to the address, while connected to the peer".into())),
                         Some(_) => alive_conn.0.clone()
@@ -1136,7 +1136,7 @@ impl Future for SdpDriver {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let socket = self.socket.clone();
         let peer_id = self.peer_id.clone();
-        // Oreder:
+        // Order:
         // 1. handle message
         // 2. handle incoming packets
         // 3. send packets; while sending block handling on the connection
